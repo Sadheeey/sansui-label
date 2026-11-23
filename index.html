@@ -23,6 +23,11 @@ nav{flex:none;padding:10px 10px 8px;display:flex;gap:6px;overflow-x:auto;border-
 nav::-webkit-scrollbar{display:none}
 nav button{flex:none;border:1px solid var(--line);background:#fff;border-radius:20px;padding:7px 13px;font-size:14px;color:var(--ink)}
 nav button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+nav .sep{flex:none;width:1px;background:var(--line);margin:2px 2px}
+nav button.st{padding:7px 11px}
+nav button.st::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px;background:var(--c)}
+nav button.st.on{background:var(--c);border-color:var(--c)}
+nav button.st.on::before{background:#fff}
 main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:10px 10px 16px}
 .card{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
 .card.s-冷凍{border-left-color:var(--frz)}
@@ -94,7 +99,7 @@ var EXEC = 'https://script.google.com/macros/s/AKfycbxVxiq_zZ6LFz_cWhz-RmKAFZ2cc
 var D = null;            // ui_data の結果
 var Q = {};              // 入力：id → 枚数（欄なし） / id → [{v:{欄名:値}, n:枚数}, …]（欄あり）
 var RUN = null;          // 印刷の進み具合
-var timer = null, filter = '';
+var timer = null, filter = '', sfilter = '';  // filter＝品目の絞り込み、sfilter＝冷凍・冷蔵・常温の絞り込み
 
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -142,14 +147,25 @@ function drawDev(dv){
   $('dev').textContent = t;
   $('dev').dataset.bad = (s == null || s > 300) ? '1' : '';
 }
-function group(l){ return String(l.item || 'その他').replace(/（.*$/, '').replace(/\(.*$/, ''); }
+// 絞り込みのボタンは短い名前にする（横に並べても場所をとらないように）
+var SHORT = { '生ベーコン': 'ベーコン', '食べる焼豚タレ': 'タレ', '半熟味玉': '味玉', '醤蘿蔔': '大根', 'はしのはし': 'はし', 'ジャーキー': 'ジャーキー' };
+var STORES = [['冷凍', 'var(--frz)'], ['冷蔵', 'var(--ref)'], ['常温', 'var(--amb)']];
+function group(l){ var k = String(l.item || 'その他').replace(/（.*$/, '').replace(/\(.*$/, ''); return SHORT[k] || k; }
+function shown(l){ return (!filter || group(l) === filter) && (!sfilter || l.storage === sfilter); }
 function groups(){ var m = [], seen = {}; D.labels.forEach(function(l){ var k = group(l); if (!seen[k]) { seen[k] = 1; m.push(k); } }); return m; }
 function drawNav(){
-  var h = '<button class="' + (filter ? '' : 'on') + '" data-k="">全部</button>';
+  var h = '';
+  STORES.forEach(function(x){ h += '<button class="st' + (sfilter === x[0] ? ' on' : '') + '" style="--c:' + x[1] + '" data-s="' + x[0] + '">' + x[0] + '</button>'; });
+  h += '<span class="sep"></span><button class="' + (filter ? '' : 'on') + '" data-k="">全部</button>';
   groups().forEach(function(k){ h += '<button class="' + (filter === k ? 'on' : '') + '" data-k="' + esc(k) + '">' + esc(k) + '</button>'; });
   $('nav').innerHTML = h;
 }
-$('nav').onclick = function(e){ var b = e.target.closest('button'); if (!b) return; filter = b.dataset.k; drawNav(); draw(); $('list').scrollTop = 0; };
+$('nav').onclick = function(e){
+  var b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.s) sfilter = sfilter === b.dataset.s ? '' : b.dataset.s; // もう一度押すと解除
+  else filter = b.dataset.k;
+  drawNav(); draw(); $('list').scrollTop = 0;
+};
 
 /* ---------- 一覧 ---------- */
 function lab(id){ for (var i = 0; i < D.labels.length; i++) if (D.labels[i].id === id) return D.labels[i]; return null; }
@@ -160,7 +176,7 @@ function newRow(l){
 }
 function draw(){
   var h = '';
-  D.labels.forEach(function(l){ if (!filter || group(l) === filter) h += card(l); });
+  D.labels.forEach(function(l){ if (shown(l)) h += card(l); });
   $('list').innerHTML = h || '<div class="msg warn">出せるラベルがありません</div>';
 }
 function card(l){
