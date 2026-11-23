@@ -16,6 +16,7 @@
 :root{--bg:#f6f4f0;--card:#fff;--ink:#222;--sub:#777;--line:#e4e0d8;--main:#b23a2a;--ok:#2e7d4f;--ng:#c0392b;
   --frz:#2b6cb0;--frz-bg:#e8f1fb;--ref:#2f855a;--ref-bg:#e6f4ec;--amb:#b7791f;--amb-bg:#fbf1df}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body,button,input{touch-action:manipulation} /* 連打してもズームしない */
 html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
 body{background:var(--bg);color:var(--ink);font-family:-apple-system,"Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;font-size:16px;
   display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
@@ -51,9 +52,20 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior
 .fl .w{width:76px;height:44px;font-size:20px;text-align:center;border:1px solid var(--line);border-radius:10px}
 .fl .d{height:44px;font-size:17px;border:1px solid var(--line);border-radius:10px;padding:0 8px;background:#fff}
 .fl .u{font-size:14px;color:var(--sub)}
-.chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 6px 2.5em}
-.chips button{border:1px solid var(--line);background:#faf8f5;border-radius:16px;padding:5px 10px;font-size:14px;color:var(--ink)}
-.chips button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.gr{display:flex;align-items:center;gap:8px;padding:5px 0}
+.gr .gw{flex:1;font-size:18px;font-weight:bold;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.gr .gw small{font-size:13px;font-weight:normal;color:var(--sub)}
+.gr .gw.kill{color:var(--ng)}
+.gr.has .gw{color:var(--main)}
+.hint{font-size:12px;color:var(--sub);margin:6px 0 2px}
+#bar{flex:none;background:#fffaf2;border-top:1px solid var(--line);display:none}
+#bar .hd{display:flex;align-items:center;gap:8px;padding:8px 10px}
+#bar .hd .tx{flex:1;font-size:14px;line-height:1.35}
+#bar .hd .tx small{display:block;color:var(--sub);font-size:12px}
+#bar .tg{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 10px;font-size:13px}
+#bar .ls{max-height:40vh;overflow-y:auto;padding:0 10px 6px;display:none}
+#bar.open .ls{display:block}
+#bar .nx{padding:9px 12px;font-size:14px}
 .cnt{display:flex;align-items:center;justify-content:flex-end;gap:8px}
 .add{margin-top:8px;border:1px dashed var(--sub);background:none;border-radius:10px;padding:9px;width:100%;font-size:14px;color:var(--sub)}
 .del{border:none;background:none;color:var(--sub);font-size:14px;padding:6px}
@@ -86,9 +98,10 @@ footer .sum b{font-size:20px}
 <body>
 <nav id="nav"></nav>
 <main id="list"><div id="load">読み込み中…</div></main>
+<div id="bar"><div class="hd" id="barHd"></div><div class="ls" id="barLs"></div></div>
 <footer>
   <div class="sum">合計 <b id="sumN">0</b> 枚（<span id="sumK">0</span>件）<br><span id="dev">店のPC 確認中…</span></div>
-  <button class="btn sub" id="bStep" disabled>1つずつ</button>
+  <button class="btn sub" id="bStep" disabled>1種類ずつ</button>
   <button class="btn main" id="bAll" disabled>まとめて印刷</button>
 </footer>
 <div id="sheet"><div class="in" id="sheetIn"></div></div>
@@ -97,9 +110,9 @@ footer .sum b{font-size:20px}
 // 受付（Apps Script）の住所。このページを別の場所に置いたときは、ここへ送る
 var EXEC = 'https://script.google.com/macros/s/AKfycbxVxiq_zZ6LFz_cWhz-RmKAFZ2ccub7rMukNTPgRcwmVwTB3gzC7A7fm0Pg1Ume7xG0/exec'; // リポジトリには書かない。公開するときに受付のURLへ置き換える（Apps Scriptから開くときは使わない）
 var D = null;            // ui_data の結果
-var Q = {};              // 入力：id → 枚数（欄なし） / id → [{v:{欄名:値}, n:枚数}, …]（欄あり）
-var RUN = null;          // 印刷の進み具合
-var timer = null, filter = '', sfilter = '';  // filter＝品目の絞り込み、sfilter＝冷凍・冷蔵・常温の絞り込み
+var Q = {};              // 入力。欄なし：id → 枚数／欄あり：id → {grid:{重さ:枚数}, rows:[{v:{欄名:値}, n:枚数}], d:{期限の欄名:'YYYY-MM-DD'}}
+var QUEUE = [];          // 印刷に回したもの {title, spec, payload, held, id, st, note}
+var SENDING = false, BAR_OPEN = false, BAR_ERR = '', timer = null, filter = '', sfilter = '';
 
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -111,6 +124,7 @@ function store(k, v){ try { if (v === undefined) return localStorage.getItem('la
 var FN = { ui_data: 'uiData', ui_enqueue: 'uiEnqueue', ui_status: 'uiStatus', ui_cancel: 'uiCancel' };
 function call(action, args, ok, ng){
   var fail = function(e){ (ng || showErr)(String(e && e.message || e)); };
+  if (!(window.google && google.script && google.script.run) && EXEC.indexOf('__') === 0) { fail('受付の住所が入っていません（公開の手順を確かめてください）'); return; }
   if (window.google && google.script && google.script.run) {
     var r = google.script.run.withSuccessHandler(ok).withFailureHandler(fail);
     r[FN[action]].apply(r, args || []);
@@ -148,7 +162,7 @@ function drawDev(dv){
   $('dev').dataset.bad = (s == null || s > 300) ? '1' : '';
 }
 // 絞り込みのボタンは短い名前にする（横に並べても場所をとらないように）
-var SHORT = { '生ベーコン': 'ベーコン', '食べる焼豚タレ': 'タレ', '半熟味玉': '味玉', '醤蘿蔔': '大根', 'はしのはし': 'はし', 'ジャーキー': 'ジャーキー' };
+var SHORT = { '生ベーコン': 'ベーコン', '食べる焼豚タレ': 'タレ', '半熟味玉': '味玉', '醤蘿蔔': '大根', 'はしのはし': 'はし' };
 var STORES = [['冷凍', 'var(--frz)'], ['冷蔵', 'var(--ref)'], ['常温', 'var(--amb)']];
 function group(l){ var k = String(l.item || 'その他').replace(/（.*$/, '').replace(/\(.*$/, ''); return SHORT[k] || k; }
 function shown(l){ return (!filter || group(l) === filter) && (!sfilter || l.storage === sfilter); }
@@ -169,10 +183,23 @@ $('nav').onclick = function(e){
 
 /* ---------- 一覧 ---------- */
 function lab(id){ for (var i = 0; i < D.labels.length; i++) if (D.labels[i].id === id) return D.labels[i]; return null; }
-function newRow(l){
-  var v = {};
-  l.fields.forEach(function(f){ v[f.name] = f.kind === 'date' ? addDays(l.dateDays) : (store(l.id + ':' + f.name) || ''); });
-  return { v: v, n: 0 };
+function numFields(l){ return l.fields.filter(function(f){ return f.kind === 'number'; }); }
+function dateFields(l){ return l.fields.filter(function(f){ return f.kind === 'date'; }); }
+// よく使う重さの一覧（数字の欄が1つだけのラベル）。軽い順、このスマホで消したものは出さない
+function gridField(l){ var n = numFields(l); return n.length === 1 ? n[0] : null; }
+function hidden(l, f){ try { return JSON.parse(store('hide:' + l.id + ':' + f.name) || '[]'); } catch (e) { return []; } }
+function gridVals(l){
+  var f = gridField(l); if (!f) return [];
+  var hide = hidden(l, f);
+  return (f.recent || []).filter(function(v){ return Number(v) >= 1 && hide.indexOf(String(v)) < 0; }).sort(function(a, b){ return Number(a) - Number(b); });
+}
+function newRow(l){ var v = {}; numFields(l).forEach(function(f){ v[f.name] = ''; }); return { v: v, n: 0 }; }
+function state(l){
+  if (!Q[l.id]) {
+    var d = {}; dateFields(l).forEach(function(f){ d[f.name] = addDays(l.dateDays); });
+    Q[l.id] = { grid: {}, rows: [newRow(l)], d: d };
+  }
+  return Q[l.id];
 }
 function draw(){
   var h = '';
@@ -183,71 +210,124 @@ function card(l){
   var fixed = !l.fields.length && l.content && l.content.charAt(0) !== '（' ? han(l.content).replace(/\s/g, '') : '';
   var h = '<div class="card s-' + esc(l.storage) + (count(l) ? ' has' : '') + '" id="c_' + l.id + '" data-id="' + l.id + '"><div class="top"><div class="nm"><b>' + esc(l.name) + '</b>' +
     (l.storage ? '<span class="tag s-' + esc(l.storage) + '">' + esc(l.storage) + '</span>' : '') + (fixed ? '<small>' + esc(fixed) + '</small>' : '') + '</div>';
-  if (!l.fields.length) return h + stepper(Q[l.id] || 0, -1) + '</div></div>';
+  if (!l.fields.length) return h + stepper(Q[l.id] || 0, 'one', '') + '</div></div>';
   h += '</div>';
-  var rows = Q[l.id] || [newRow(l)];
-  Q[l.id] = rows;
-  rows.forEach(function(r, i){
-    h += '<div class="spec" data-i="' + i + '">';
-    l.fields.forEach(function(f){
-      if (f.kind === 'date') {
-        h += '<div class="fl"><label>' + esc(f.name) + '</label><input class="d" type="date" data-f="' + esc(f.name) + '" value="' + esc(r.v[f.name]) + '"><span class="u">' + esc(labelDate(r.v[f.name])) + '</span></div>';
-      } else {
-        h += '<div class="fl"><label>' + esc(f.name) + '</label><input class="w" inputmode="numeric" data-f="' + esc(f.name) + '" value="' + esc(r.v[f.name]) + '" placeholder="000"><span class="u">' + esc(f.unit || '') + '</span></div>';
-        if (f.recent && f.recent.length) {
-          h += '<div class="chips">' + f.recent.map(function(x){ return '<button data-f="' + esc(f.name) + '" data-v="' + esc(x) + '" class="' + (String(r.v[f.name]) === String(x) ? 'on' : '') + '">' + esc(x) + esc(f.unit || '') + '</button>'; }).join('') + '</div>';
-        }
-      }
-    });
-    h += '<div class="cnt">' + (rows.length > 1 ? '<button class="del" data-del="1">✕ この行をけす</button>' : '') + stepper(r.n, i) + '</div></div>';
+  var q = state(l), gf = gridField(l), gv = gridVals(l);
+  dateFields(l).forEach(function(f){
+    h += '<div class="fl" style="margin-top:8px"><label>' + esc(f.name) + '</label><input class="d" type="date" data-f="' + esc(f.name) + '" value="' + esc(q.d[f.name]) + '"><span class="u">' + esc(labelDate(q.d[f.name])) + '</span></div>';
   });
-  h += '<button class="add">＋ 別の' + esc(l.fields[0].name) + 'を足す</button>';
+  if (gv.length) {
+    h += '<div class="spec">';
+    gv.forEach(function(v){
+      var n = q.grid[v] || 0;
+      h += '<div class="gr' + (n ? ' has' : '') + '"><span class="gw" data-gv="' + esc(v) + '">' + esc(v) + '<small>' + esc(gf.unit || '') + '</small></span>' + stepper(n, 'grid', v) + '</div>';
+    });
+    h += '<div class="hint">ほかの' + esc(gf.name) + '（長押しで上の候補を消せます）</div></div>';
+  }
+  var rows = q.rows;
+  rows.forEach(function(r, i){
+    h += '<div class="' + (gv.length ? '' : 'spec ') + 'rw" data-i="' + i + '"><div class="gr">';
+    numFields(l).forEach(function(f){
+      h += '<input class="w" inputmode="numeric" autocomplete="off" data-f="' + esc(f.name) + '" value="' + esc(r.v[f.name]) + '" placeholder="' + esc(f.name) + '"><span class="u">' + esc(f.unit || '') + '</span>';
+    });
+    h += '<span style="flex:1"></span>' + stepper(r.n, 'row', i) + '</div>' + (rows.length > 1 ? '<button class="del" data-del="' + i + '">✕ この行をけす</button>' : '') + '</div>';
+  });
+  if (numFields(l).length) h += '<button class="add">＋ 別の' + esc(numFields(l)[0].name) + 'を足す</button>';
   return h + '</div>';
 }
-function stepper(n, i){
-  return '<div class="step" data-i="' + i + '"><button data-d="-1">−</button><input class="n" inputmode="numeric" value="' + (n || '') + '" placeholder="0"><button data-d="1">＋</button></div>';
+function stepper(n, kind, key){
+  return '<div class="step" data-k="' + kind + '" data-key="' + esc(key) + '"><button data-d="-1">−</button><input class="n" inputmode="numeric" autocomplete="off" value="' + (n || '') + '" placeholder="0"><button data-d="1">＋</button></div>';
 }
-function count(l){ var q = Q[l.id]; if (!q) return 0; if (!l.fields.length) return q; return q.reduce(function(a, r){ return a + (r.n || 0); }, 0); }
+function count(l){
+  var q = Q[l.id]; if (!q) return 0; if (!l.fields.length) return q;
+  var s = 0; for (var k in q.grid) s += q.grid[k] || 0;
+  q.rows.forEach(function(r){ s += r.n || 0; }); return s;
+}
 function redrawCard(id){ var el = $('c_' + id); if (el) el.outerHTML = card(lab(id)); }
-function rowOf(el){ var s = el.closest('.spec'); return s ? Number(s.dataset.i) : -1; }
+function setCount(l, kind, key, n){
+  if (kind === 'one') Q[l.id] = n;
+  else if (kind === 'grid') state(l).grid[key] = n;
+  else state(l).rows[Number(key)].n = n;
+}
+function getCount(l, kind, key){
+  if (kind === 'one') return Q[l.id] || 0;
+  if (kind === 'grid') return state(l).grid[key] || 0;
+  return state(l).rows[Number(key)].n || 0;
+}
 
 // 一覧の中の操作はここでまとめて受ける
 $('list').addEventListener('click', function(e){
   var c = e.target.closest('.card'); if (!c) return;
-  var l = lab(c.dataset.id), b = e.target.closest('button'); if (!b) return;
-  var i = rowOf(b);
+  var l = lab(c.dataset.id);
+  var gw = e.target.closest('.gw');
+  if (gw && Date.now() - (window.__killAt || 0) < 500) return; // 長押しで指を離したときの1回は数えない
+  if (gw && gw.classList.contains('kill')) { // 長押しのあと、もう一度押すと候補から消す
+    var f = gridField(l), list = hidden(l, f); list.push(gw.dataset.gv); store('hide:' + l.id + ':' + f.name, JSON.stringify(list));
+    delete state(l).grid[gw.dataset.gv]; redrawCard(l.id); sum(); return;
+  }
+  var b = e.target.closest('button'); if (!b) return;
   if (b.dataset.d) {
-    var d = Number(b.dataset.d);
-    if (!l.fields.length) Q[l.id] = clampN((Q[l.id] || 0) + d); else Q[l.id][i].n = clampN((Q[l.id][i].n || 0) + d);
-  } else if (b.dataset.v) {
-    Q[l.id][i].v[b.dataset.f] = b.dataset.v;
-  } else if (b.dataset.del) {
-    Q[l.id].splice(i, 1);
+    var st = b.closest('.step'); setCount(l, st.dataset.k, st.dataset.key, clampN(getCount(l, st.dataset.k, st.dataset.key) + Number(b.dataset.d)));
+  } else if (b.dataset.del != null) {
+    state(l).rows.splice(Number(b.dataset.del), 1);
   } else if (b.classList.contains('add')) {
-    Q[l.id].push(newRow(l));
+    state(l).rows.push(newRow(l));
   } else return;
   redrawCard(l.id); sum();
 });
 $('list').addEventListener('input', function(e){
   var c = e.target.closest('.card'); if (!c) return;
-  var l = lab(c.dataset.id), t = e.target, i = rowOf(t);
+  var l = lab(c.dataset.id), t = e.target;
   if (t.classList.contains('n')) {
-    var n = clampN(t.value);
-    if (!l.fields.length) Q[l.id] = n; else Q[l.id][i].n = n;
+    var st = t.closest('.step'), n = clampN(t.value);
+    setCount(l, st.dataset.k, st.dataset.key, n);
     if (t.value !== '' && String(n) !== t.value) t.value = n || '';
+    var gr = t.closest('.gr'); if (gr && st.dataset.k === 'grid') gr.classList.toggle('has', n > 0);
     c.classList.toggle('has', count(l) > 0);
   } else if (t.classList.contains('w')) {
-    Q[l.id][i].v[t.dataset.f] = han(t.value).replace(/[^0-9]/g, '').slice(0, 4);
-    if (t.value !== Q[l.id][i].v[t.dataset.f]) t.value = Q[l.id][i].v[t.dataset.f];
-    var chips = t.closest('.spec').querySelectorAll('.chips button[data-f="' + t.dataset.f + '"]');
-    for (var k = 0; k < chips.length; k++) chips[k].classList.toggle('on', chips[k].dataset.v === Q[l.id][i].v[t.dataset.f]);
+    var i = Number(t.closest('.rw').dataset.i), v = han(t.value).replace(/[^0-9]/g, '').slice(0, 4);
+    state(l).rows[i].v[t.dataset.f] = v;
+    if (t.value !== v) t.value = v;
   } else if (t.classList.contains('d')) {
-    Q[l.id][i].v[t.dataset.f] = t.value;
+    state(l).d[t.dataset.f] = t.value;
     t.nextElementSibling.textContent = labelDate(t.value);
   }
   sum();
 });
-$('list').addEventListener('focusin', function(e){ if (e.target.classList.contains('n')) e.target.select(); });
+// 数字の欄を触ったら中身を消して、すぐ打ち直せるようにする
+$('list').addEventListener('focusin', function(e){
+  var t = e.target;
+  if (!t.classList.contains('n') && !t.classList.contains('w')) return;
+  if (t.value === '') return;
+  t.dataset.prev = t.value; t.value = '';
+  t.dispatchEvent(new Event('input', { bubbles: true }));
+});
+$('list').addEventListener('focusout', function(e){
+  var t = e.target;
+  if ((t.classList.contains('n') || t.classList.contains('w')) && t.value === '' && t.dataset.prev) {
+    t.value = t.dataset.prev; t.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  if (t.dataset) delete t.dataset.prev;
+});
+// 候補を長押しすると「消す？」に変わる（3秒以内にもう一度押すと消える）
+var pressT = null, pressXY = null;
+function pt(e){ var t = e.touches ? e.touches[0] : e; return t ? [t.clientX, t.clientY] : [0, 0]; }
+function pressStart(e){
+  var gw = e.target.closest('.gw'); if (!gw || gw.classList.contains('kill')) return;
+  clearTimeout(pressT); pressXY = pt(e);
+  pressT = setTimeout(function(){
+    window.__killAt = Date.now(); window.__pressFired = true; gw.classList.add('kill'); gw.dataset.txt = gw.innerHTML; gw.innerHTML = '✕ 消す？ ' + esc(gw.dataset.gv);
+    setTimeout(function(){ if (gw.isConnected && gw.classList.contains('kill')) { gw.classList.remove('kill'); gw.innerHTML = gw.dataset.txt; } }, 3000);
+  }, 600);
+}
+function pressEnd(){ clearTimeout(pressT); if (window.__pressFired) { window.__killAt = Date.now(); window.__pressFired = false; } }
+$('list').addEventListener('touchstart', pressStart, { passive: true });
+$('list').addEventListener('mousedown', pressStart);
+['touchend', 'touchcancel', 'mouseup', 'mouseleave'].forEach(function(ev){ $('list').addEventListener(ev, pressEnd); });
+$('list').addEventListener('touchmove', function(e){ // 10px以上動いたら（スクロール）長押しをやめる
+  if (!pressXY) return; var p = pt(e); if (Math.abs(p[0] - pressXY[0]) > 10 || Math.abs(p[1] - pressXY[1]) > 10) clearTimeout(pressT);
+}, { passive: true });
+$('list').addEventListener('contextmenu', function(e){ if (e.target.closest('.gw')) e.preventDefault(); });
 
 /* ---------- 集める ---------- */
 function collect(){
@@ -255,17 +335,24 @@ function collect(){
   D.labels.forEach(function(l){
     var q = Q[l.id]; if (!q) return;
     if (!l.fields.length) { if (q > 0) out.push({ label: l.id, values: {}, copies: q, title: l.name, spec: l.storage || '' }); return; }
-    q.forEach(function(r){
+    var dates = {}, dspec = [], dmiss = '';
+    dateFields(l).forEach(function(f){ var x = labelDate(q.d[f.name]); if (!x) dmiss = dmiss || f.name; dates[f.name] = x; dspec.push(f.name + ' ' + x); });
+    var push = function(nv, n, wspec){
+      var v = {}; for (var k in nv) v[k] = nv[k]; for (var k2 in dates) v[k2] = dates[k2];
+      out.push({ label: l.id, values: v, copies: n, title: l.name, spec: [wspec].concat(dspec).filter(Boolean).join('・') });
+    };
+    var gf = gridField(l);
+    gridVals(l).forEach(function(gv){
+      var n = q.grid[gv] || 0; if (!n) return;
+      if (dmiss) { bad.push(l.name + '：' + dmiss + 'が入っていません'); return; }
+      var nv = {}; nv[gf.name] = String(gv); push(nv, n, gv + (gf.unit || ''));
+    });
+    q.rows.forEach(function(r){
       if (!r.n) return;
-      var v = {}, spec = [], miss = '';
-      l.fields.forEach(function(f){
-        var x = r.v[f.name];
-        if (f.kind === 'date') { x = labelDate(x); if (!x) miss = miss || f.name; else spec.push(f.name + ' ' + x); }
-        else { if (!/^[0-9]{1,4}$/.test(x || '') || Number(x) < 1) miss = miss || f.name; else spec.push(x + (f.unit || '')); }
-        v[f.name] = x;
-      });
+      var miss = dmiss, ws = [];
+      numFields(l).forEach(function(f){ var x = r.v[f.name]; if (!/^[0-9]{1,4}$/.test(x || '') || Number(x) < 1) miss = miss || f.name; else ws.push(x + (f.unit || '')); });
       if (miss) { bad.push(l.name + '：' + miss + 'が入っていません'); return; }
-      out.push({ label: l.id, values: v, copies: r.n, title: l.name, spec: spec.join('・'), keep: l });
+      push(r.v, r.n, ws.join('・'));
     });
   });
   return { items: out, bad: bad };
@@ -274,11 +361,7 @@ function sum(){
   if (!D) return;
   var c = collect(), n = c.items.reduce(function(a, x){ return a + x.copies; }, 0);
   $('sumN').textContent = n; $('sumK').textContent = c.items.length;
-  $('bAll').disabled = $('bStep').disabled = !(n > 0 || c.bad.length) || !!RUN; // 入れ忘れは押したときに知らせる
-}
-// 印刷に回した重さを、このスマホに覚えておく（次に行を足したときの初期値）
-function remember(items){
-  items.forEach(function(x){ if (!x.keep) return; x.keep.fields.forEach(function(f){ if (f.kind !== 'date' && x.values[f.name]) store(x.label + ':' + f.name, x.values[f.name]); }); });
+  $('bAll').disabled = $('bStep').disabled = !(n > 0 || c.bad.length); // 入れ忘れは押したときに知らせる
 }
 
 /* ---------- 確かめて印刷 ---------- */
@@ -288,94 +371,122 @@ function confirmRun(mode){
   var c = collect();
   if (c.bad.length) { showErr(c.bad.join('\n')); return; }
   var n = c.items.reduce(function(a, x){ return a + x.copies; }, 0);
-  var h = '<h3>' + (mode === 'all' ? 'まとめて印刷' : '1つずつ印刷') + '（合計 ' + n + ' 枚）</h3>';
+  var h = '<h3>' + (mode === 'all' ? 'まとめて印刷' : '1種類ずつ印刷') + '（合計 ' + n + ' 枚）</h3>';
   if ($('dev').dataset.bad) h += '<div class="msg warn">店のPCとつながっていないようです。依頼は並びますが、PCが動くまで印刷されません。</div>';
-  if (mode === 'step') h += '<div class="msg ok">1件ずつ出します。貼り終わったら「次を印刷」を押してください。</div>';
+  if (mode === 'step') h += '<div class="msg ok">最初の1種類だけ出します。下の帯の「次を印刷」で、次の種類を出します。\n※「次を待つ」の分は、この画面を閉じると消えます。</div>';
   c.items.forEach(function(x){ h += '<div class="row"><div class="t">' + esc(x.title) + '<small>' + esc(x.spec) + '</small></div><div class="c">' + x.copies + ' 枚</div></div>'; });
   h += '<div class="acts"><button class="btn sub" onclick="closeSheet()">戻る</button><button class="btn main" id="go">印刷する</button></div>';
   openSheet(h);
   $('go').onclick = function(){
     this.disabled = true;
-    remember(c.items);
-    RUN = { mode: mode, items: c.items, ids: [], st: {}, idx: 0 };
-    sum();
-    if (mode === 'all') send(c.items); else send([c.items[0]]);
+    c.items.forEach(function(x, i){
+      QUEUE.push({ title: x.title, spec: x.spec, copies: x.copies, payload: { label: x.label, values: x.values, copies: x.copies }, held: mode === 'step' && i > 0, id: null, st: '', note: '' });
+    });
+    Q = {}; closeSheet(); draw(); sum(); // 印刷中でも、すぐ次を入れられる
+    sendPending();
   };
 }
-function send(list){
-  RUN.sending = true;
-  call('ui_enqueue', [list.map(function(x){ return { label: x.label, values: x.values, copies: x.copies }; }), '画面'], function(r){
-    if (!RUN) return;
-    RUN.sending = false;
-    if (!r || !r.ok) { failSend(r && r.error); return; }
-    RUN.ids = RUN.ids.concat(r.ids);
-    drawRun(); poll();
-  }, function(m){ if (RUN) RUN.sending = false; failSend(m); });
+
+/* ---------- 印刷の様子（下の帯） ---------- */
+function sendPending(){
+  if (SENDING) return;
+  var list = QUEUE.filter(function(x){ return !x.held && !x.retry && !x.id && !x.gone; }).slice(0, 50); // 受付は1回50件まで
+  if (!list.length) { drawBar(); return; }
+  SENDING = true; list.forEach(function(x){ x.sending = true; }); drawBar();
+  call('ui_enqueue', [list.map(function(x){ return x.payload; }), '画面'], function(r){
+    SENDING = false;
+    list.forEach(function(x){ x.sending = false; });
+    if (!r || !r.ok) { failSend(r && r.error, false); return; }
+    list.forEach(function(x, i){ x.id = r.ids[i]; x.st = '待ち'; });
+    BAR_ERR = ''; POLL_WAIT = 3000; STILL = 0; sendPending(); poll();
+  }, function(m){ SENDING = false; list.forEach(function(x){ x.sending = false; }); failSend(m, true); });
 }
-// 並べられなかったとき：最初の1件なら全部やめる。1つずつの途中なら、その1件を「まだ」に戻して知らせる
-function failSend(m){
-  if (RUN && RUN.ids.length) { if (RUN.mode === 'step') RUN.idx = RUN.ids.length - 1; RUN.err = m; drawRun(); return; }
-  RUN = null; sum(); showErr(m);
+// 送れなかった分は「送り直し待ち」にする（自動では送り直さない）。
+// 通信が切れたときは、実は受付に届いていることがあるので、二重に刷らないよう注意を出す
+function failSend(m, unsure){
+  QUEUE.forEach(function(x){ if (!x.id && !x.gone && !x.held) x.retry = true; });
+  BAR_ERR = unsure ? '通信が切れました。届いたか分かりません。店のPCで出ていないか確かめてから「送り直す」を押してください'
+                   : (m || '送れませんでした');
+  BAR_OPEN = true; drawBar();
 }
+function resend(){ if (SENDING) return; QUEUE.forEach(function(x){ x.retry = false; }); BAR_ERR = ''; sendPending(); }
+function isEnd(s){ return s === '済み' || s === '失敗' || s === '取消' || s === '不明'; }
+var POLL_WAIT = 3000, STILL = 0;
 function poll(){
   clearTimeout(timer);
-  if (!RUN || !RUN.ids.length) return;
-  call('ui_status', [RUN.ids], function(r){
-    if (!RUN) return;
-    RUN.st = (r && r.jobs) || {}; drawDev(r && r.device); drawRun();
-    if (!settled()) timer = setTimeout(poll, 3000);
-  }, function(){ timer = setTimeout(poll, 5000); });
+  var ids = QUEUE.filter(function(x){ return x.id && !isEnd(x.st); }).map(function(x){ return x.id; });
+  if (!ids.length) { drawBar(); return; }
+  call('ui_status', [ids], function(r){
+    var jobs = (r && r.jobs) || {}, changed = false;
+    QUEUE.forEach(function(x){
+      if (!x.id || isEnd(x.st)) return;
+      if (jobs[x.id]) { if (x.st !== jobs[x.id].status) changed = true; x.st = jobs[x.id].status; x.note = jobs[x.id].note; }
+      else if (r && r.ok) { x.st = '不明'; changed = true; } // 依頼の行が見つからない分は追わない
+    });
+    STILL = changed ? 0 : STILL + 1;
+    POLL_WAIT = STILL < 20 ? 3000 : Math.min(POLL_WAIT * 2, 30000); // 1分ほど動きがないときだけ間隔を延ばす（PCが止まっているとき）
+    drawDev(r && r.device); drawBar();
+    timer = setTimeout(poll, POLL_WAIT);
+  }, function(){ POLL_WAIT = Math.min(POLL_WAIT * 2, 30000); timer = setTimeout(poll, POLL_WAIT); });
 }
-function isEnd(s){ return s === '済み' || s === '失敗' || s === '取消'; }
-function settled(){ return !!RUN && RUN.ids.every(function(id){ return isEnd((RUN.st[id] || {}).status); }); }
-function finished(){ return !RUN || (!RUN.sending && settled() && RUN.ids.length === RUN.items.length); }
-var MARK = { '待ち': '⏳ 待ち', '印刷中': '🖨 印刷中', '済み': '✅ 済み', '失敗': '❌ 失敗', '取消': '— 取消' };
-function drawRun(){
-  var done = 0, h = '<h3>印刷の様子</h3>';
-  if (RUN.err) h += '<div class="msg ng">' + esc(RUN.err) + '</div>';
-  RUN.items.forEach(function(x, i){
-    var id = RUN.ids[i], j = id ? (RUN.st[id] || { status: '待ち' }) : null;
-    var s = j ? esc(MARK[j.status] || j.status) : 'まだ';
-    if (j && j.status === '済み') done++;
-    h += '<div class="row"><div class="t">' + esc(x.title) + '<small>' + esc(x.spec) + (j && j.status === '失敗' && j.note ? ' ' + esc(j.note) : '') + '</small></div><div class="c">' + x.copies + ' 枚</div><div class="s">' + s + '</div>' +
-      (j && j.status === '待ち' ? '<button class="x" onclick="cancelJob(\'' + esc(id) + '\')">取消</button>' : '') + '</div>';
-  });
-  var acts = '';
-  if (finished()) {
-    acts = '<button class="btn main" onclick="finish()">おわり（' + done + '/' + RUN.items.length + ' 件 済み）</button>';
+var MARK = { '待ち': '⏳ 待ち', '印刷中': '🖨 印刷中', '済み': '✅ 済み', '失敗': '❌ 失敗', '取消': '— 取消', '不明': '？ 不明' };
+var LAST_HD = '', LAST_LS = '';
+function live(){ return QUEUE.filter(function(x){ return !x.gone; }); }
+function drawBar(){
+  var q = live(), bar = $('bar');
+  if (!q.length) { bar.style.display = 'none'; return; }
+  bar.style.display = 'block'; bar.classList.toggle('open', BAR_OPEN);
+  var done = q.filter(function(x){ return x.st === '済み'; }).length;
+  var held = q.filter(function(x){ return x.held; });
+  var retry = q.filter(function(x){ return x.retry; });
+  var bad = q.filter(function(x){ return x.st === '失敗' || x.st === '不明'; });
+  var busy = q.some(function(x){ return x.sending || (x.id && !isEnd(x.st)) || (!x.id && !x.held && !x.retry); });
+  var sheets = q.filter(function(x){ return x.st === '済み'; }).reduce(function(a, x){ return a + x.copies; }, 0);
+  var tx, acts = '';
+  if (retry.length) {
+    tx = '⚠️ 送れていない分が ' + retry.length + '件 あります';
+    acts = '<button class="btn main nx" ' + (SENDING ? 'disabled' : '') + ' onclick="resend()">送り直す</button>';
+  } else if (!busy && !held.length) {
+    tx = bad.length ? '❌ ' + bad.length + '件 うまく刷れていません（済み ' + done + '/' + q.length + '件）' : '✅ 全部おわりました（' + done + '/' + q.length + '件・' + sheets + '枚）';
+    if (bad.length) BAR_OPEN = true;
+    acts = '<button class="btn sub nx" onclick="clearBar()">閉じる</button>';
   } else {
-    acts = RUN.sending ? '' : '<button class="btn sub" onclick="stopRun()">やめる</button>';
-    if (RUN.mode === 'step' && RUN.ids.length < RUN.items.length) {
-      var nx = RUN.items[RUN.ids.length], ready = settled() && !RUN.sending;
-      acts += '<button class="btn main" ' + (ready ? '' : 'disabled') + ' onclick="nextOne(this)">次を印刷：' + esc(nx.title) + ' ' + esc(nx.spec) + ' ×' + nx.copies + '</button>';
-    }
+    tx = '🖨 印刷：済み ' + done + '/' + q.length + '件' + (held.length ? '<small>次：' + esc(held[0].title) + ' ' + esc(held[0].spec) + ' ×' + held[0].copies + '</small>' : '');
+    if (held.length) acts = '<button class="btn main nx" ' + (SENDING ? 'disabled' : '') + ' onclick="nextOne()">次を印刷</button>';
   }
-  openSheet(h + '<div class="acts">' + acts + '</div>');
+  if (BAR_ERR) tx += '<small style="color:var(--ng)">' + esc(BAR_ERR) + '</small>';
+  var hd = '<div class="tx">' + tx + '</div>' + acts + '<button class="tg" onclick="toggleBar()">' + (BAR_OPEN ? '▼' : '▲ 一覧') + '</button>';
+  if (hd !== LAST_HD) { $('barHd').innerHTML = hd; LAST_HD = hd; } // 中身が同じなら作り直さない（押している最中に消えないように）
+  bar.classList.toggle('open', BAR_OPEN);
+  var h = '';
+  q.forEach(function(x, i){
+    var s = x.retry ? '⚠️ 送り直し待ち' : x.held ? '⏸ 次を待つ' : x.sending ? '送信中' : x.cancelling ? '取消中' : esc(MARK[x.st] || x.st || '…');
+    var canX = !x.cancelling && (x.held || x.retry || x.st === '待ち');
+    h += '<div class="row"><div class="t">' + esc(x.title) + '<small>' + esc(x.spec) + (x.st === '失敗' && x.note ? ' ' + esc(x.note) : '') + '</small></div><div class="c">' + x.copies + ' 枚</div><div class="s">' + s + '</div>' +
+      (canX ? '<button class="x" onclick="cancelOne(' + QUEUE.indexOf(x) + ')">取消</button>' : '') + '</div>';
+  });
+  if (h !== LAST_LS) { $('barLs').innerHTML = h; LAST_LS = h; }
 }
-function nextOne(btn){
-  if (!RUN || RUN.sending || !settled() || RUN.ids.length >= RUN.items.length) return;
-  if (btn) btn.disabled = true;
-  RUN.err = ''; RUN.idx = RUN.ids.length;
-  send([RUN.items[RUN.idx]]);
+function toggleBar(){ BAR_OPEN = !BAR_OPEN; drawBar(); }
+function nextOne(){
+  if (SENDING) return;
+  var x = QUEUE.filter(function(y){ return y.held && !y.gone; })[0]; if (!x) return;
+  x.held = false; BAR_ERR = ''; sendPending();
 }
-function cancelJob(id){
-  call('ui_cancel', [id], function(r){ if (RUN) RUN.err = r && r.ok ? '' : (r && r.error); poll(); },
-    function(m){ if (RUN) RUN.err = m; poll(); });
+function cancelOne(k){
+  var x = QUEUE[k]; if (!x) return;
+  if (x.held || x.retry) { x.gone = true; drawBar(); return; }   // まだ送っていない分は、ここで消すだけ
+  if (x.st !== '待ち' || x.cancelling) return;
+  x.cancelling = true; drawBar();
+  call('ui_cancel', [x.id], function(r){ x.cancelling = false; if (r && r.ok) x.st = '取消'; BAR_ERR = r && r.ok ? '' : (r && r.error) || ''; POLL_WAIT = 3000; poll(); },
+    function(m){ x.cancelling = false; BAR_ERR = m; poll(); });
 }
-function stopRun(){
-  if (!RUN || RUN.sending) return;
-  var waiting = RUN.ids.filter(function(id){ return (RUN.st[id] || { status: '待ち' }).status === '待ち'; });
-  var left = waiting.length, late = 0;
-  if (!left) { finish(); return; }
-  var one = function(){ if (--left > 0) return; if (late) { RUN.err = late + ' 件は印刷が始まっていたので取り消せませんでした'; RUN.items = RUN.items.slice(0, RUN.ids.length); poll(); } else finish(); };
-  waiting.forEach(function(id){ call('ui_cancel', [id], function(r){ if (!r || !r.ok) late++; one(); }, function(){ late++; one(); }); });
-}
-function finish(){ clearTimeout(timer); RUN = null; Q = {}; $('sheet').style.display = 'none'; load(); }
+function clearBar(){ clearTimeout(timer); QUEUE = []; BAR_OPEN = false; BAR_ERR = ''; LAST_HD = LAST_LS = ''; drawBar(); load(); }
 function openSheet(h){ $('sheetIn').innerHTML = h; $('sheet').style.display = 'flex'; }
-function closeSheet(){ if (RUN && RUN.ids.length) { drawRun(); return; } $('sheet').style.display = 'none'; }
+function closeSheet(){ $('sheet').style.display = 'none'; }
 
-setInterval(function(){ if (!RUN && !document.hidden) call('ui_status', [[]], function(r){ drawDev(r && r.device); }, function(){}); }, 30000);
-document.addEventListener('visibilitychange', function(){ if (!document.hidden && !RUN) call('ui_status', [[]], function(r){ drawDev(r && r.device); }, function(){}); });
+setInterval(function(){ if (!document.hidden) call('ui_status', [[]], function(r){ drawDev(r && r.device); }, function(){}); }, 30000);
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) { call('ui_status', [[]], function(r){ drawDev(r && r.device); }, function(){}); poll(); } });
 load();
 </script>
 </body>
