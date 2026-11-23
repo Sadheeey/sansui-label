@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ラベル">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f6f4f0">
+<meta name="robots" content="noindex, nofollow">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>ラベル発行</title>
+<style>
+:root{--bg:#f6f4f0;--card:#fff;--ink:#222;--sub:#777;--line:#e4e0d8;--main:#b23a2a;--ok:#2e7d4f;--ng:#c0392b;
+  --frz:#2b6cb0;--frz-bg:#e8f1fb;--ref:#2f855a;--ref-bg:#e6f4ec;--amb:#b7791f;--amb-bg:#fbf1df}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
+body{background:var(--bg);color:var(--ink);font-family:-apple-system,"Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;font-size:16px;
+  display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
+nav{flex:none;padding:10px 10px 8px;display:flex;gap:6px;overflow-x:auto;border-bottom:1px solid var(--line);scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{flex:none;border:1px solid var(--line);background:#fff;border-radius:20px;padding:7px 13px;font-size:14px;color:var(--ink)}
+nav button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:10px 10px 16px}
+.card{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.card.s-冷凍{border-left-color:var(--frz)}
+.card.s-冷蔵{border-left-color:var(--ref)}
+.card.s-常温{border-left-color:var(--amb)}
+.card.has{box-shadow:0 0 0 2px var(--main) inset}
+.top{display:flex;align-items:center;gap:8px}
+.nm{flex:1;min-width:0}
+.nm b{font-size:17px;line-height:1.3}
+.nm small{display:block;color:var(--sub);font-size:13px;margin-top:2px}
+.tag{display:inline-block;font-size:11px;font-weight:bold;border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:2px}
+.tag.s-冷凍{color:var(--frz);background:var(--frz-bg)}
+.tag.s-冷蔵{color:var(--ref);background:var(--ref-bg)}
+.tag.s-常温{color:var(--amb);background:var(--amb-bg)}
+.step{display:flex;align-items:center;gap:4px;flex:none}
+.step button{width:44px;height:44px;border-radius:10px;border:1px solid var(--line);background:#faf8f5;font-size:22px;line-height:1;color:var(--ink)}
+.step input{width:56px;height:44px;text-align:center;font-size:20px;border:1px solid var(--line);border-radius:10px}
+.spec{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
+.fl{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.fl label{font-size:13px;color:var(--sub);min-width:2.5em}
+.fl .w{width:76px;height:44px;font-size:20px;text-align:center;border:1px solid var(--line);border-radius:10px}
+.fl .d{height:44px;font-size:17px;border:1px solid var(--line);border-radius:10px;padding:0 8px;background:#fff}
+.fl .u{font-size:14px;color:var(--sub)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 6px 2.5em}
+.chips button{border:1px solid var(--line);background:#faf8f5;border-radius:16px;padding:5px 10px;font-size:14px;color:var(--ink)}
+.chips button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.cnt{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.add{margin-top:8px;border:1px dashed var(--sub);background:none;border-radius:10px;padding:9px;width:100%;font-size:14px;color:var(--sub)}
+.del{border:none;background:none;color:var(--sub);font-size:14px;padding:6px}
+footer{flex:none;background:#fff;border-top:1px solid var(--line);padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center}
+footer .sum{flex:1;font-size:13px;line-height:1.35}
+footer .sum b{font-size:20px}
+#dev{font-size:11px;color:var(--sub);white-space:nowrap}
+.btn{border:none;border-radius:12px;padding:12px 14px;font-size:16px;font-weight:bold}
+.btn.main{background:var(--main);color:#fff}
+.btn.sub{background:#fff;border:1px solid var(--main);color:var(--main)}
+.btn:disabled{opacity:.35}
+#sheet{position:fixed;top:0;left:0;right:0;bottom:0;z-index:10;background:rgba(0,0,0,.5);display:none;align-items:flex-end}
+#sheet .in{background:#fff;width:100%;max-height:85%;overflow:auto;border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
+#sheet h3{margin:0 0 10px;font-size:18px}
+.row{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+.row .t{flex:1}
+.row .t small{display:block;color:var(--sub);font-size:12px}
+.row .c{font-weight:bold;white-space:nowrap}
+.row .s{white-space:nowrap;font-size:14px}
+.row .x{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 8px;font-size:13px}
+.acts{display:flex;gap:8px;margin-top:14px}
+.acts .btn{flex:1}
+.msg{padding:10px;border-radius:10px;margin:8px 0;font-size:14px;white-space:pre-line}
+.msg.ng{background:#fdecea;color:var(--ng)}
+.msg.warn{background:#fff6e0;color:#7a5600}
+.msg.ok{background:#e8f5ec;color:var(--ok)}
+#load{padding:40px;text-align:center;color:var(--sub)}
+</style>
+</head>
+<body>
+<nav id="nav"></nav>
+<main id="list"><div id="load">読み込み中…</div></main>
+<footer>
+  <div class="sum">合計 <b id="sumN">0</b> 枚（<span id="sumK">0</span>件）<br><span id="dev">店のPC 確認中…</span></div>
+  <button class="btn sub" id="bStep" disabled>1つずつ</button>
+  <button class="btn main" id="bAll" disabled>まとめて印刷</button>
+</footer>
+<div id="sheet"><div class="in" id="sheetIn"></div></div>
+
+<script>
+// 受付（Apps Script）の住所。このページを別の場所に置いたときは、ここへ送る
+var EXEC = 'https://script.google.com/macros/s/AKfycbxVxiq_zZ6LFz_cWhz-RmKAFZ2ccub7rMukNTPgRcwmVwTB3gzC7A7fm0Pg1Ume7xG0/exec'; // リポジトリには書かない。公開するときに受付のURLへ置き換える（Apps Scriptから開くときは使わない）
+var D = null;            // ui_data の結果
+var Q = {};              // 入力：id → 枚数（欄なし） / id → [{v:{欄名:値}, n:枚数}, …]（欄あり）
+var RUN = null;          // 印刷の進み具合
+var timer = null, filter = '';
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function han(s){ return String(s).replace(/[０-９ｇ．]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }); }
+function clampN(v){ v = parseInt(han(v), 10); if (!isFinite(v) || v < 0) v = 0; return Math.min(v, D ? D.maxCopies : 200); }
+function store(k, v){ try { if (v === undefined) return localStorage.getItem('label:' + k); localStorage.setItem('label:' + k, v); } catch (e) { return null; } }
+
+// 受付を呼ぶ：Apps Script の中で開いたときは google.script.run、別ページのときは fetch
+var FN = { ui_data: 'uiData', ui_enqueue: 'uiEnqueue', ui_status: 'uiStatus', ui_cancel: 'uiCancel' };
+function call(action, args, ok, ng){
+  var fail = function(e){ (ng || showErr)(String(e && e.message || e)); };
+  if (window.google && google.script && google.script.run) {
+    var r = google.script.run.withSuccessHandler(ok).withFailureHandler(fail);
+    r[FN[action]].apply(r, args || []);
+    return;
+  }
+  var body = { action: action };
+  if (action === 'ui_enqueue') { body.items = args[0]; body.source = args[1]; }
+  if (action === 'ui_status') body.ids = args[0];
+  if (action === 'ui_cancel') body.id = args[0];
+  fetch(EXEC, { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'text/plain;charset=utf-8' } })
+    .then(function(res){ if (!res.ok) throw new Error('受付につながりません（' + res.status + '）'); return res.json().catch(function(){ throw new Error('受付の返事が読めません。少しして、もう一度押してください'); }); })
+    .then(ok).catch(fail);
+}
+function showErr(m){ openSheet('<h3>うまくいきませんでした</h3><div class="msg ng">' + esc(m) + '</div><div class="acts"><button class="btn sub" onclick="closeSheet()">閉じる</button></div>'); }
+
+/* ---------- 日付 ---------- */
+function ymd(d){ return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function addDays(n){ var d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + (n || 0)); return ymd(d); }
+function labelDate(s){ var p = String(s).split('-'); return p.length === 3 ? (p[0].slice(2) + '.' + Number(p[1]) + '.' + Number(p[2])) : ''; } // 2026-12-07 → 26.12.7（数字の全角は受付でそろえる）
+
+/* ---------- 読み込み ---------- */
+function load(){
+  call('ui_data', [], function(d){
+    if (!d || !d.ok) { $('list').innerHTML = '<div class="msg ng">読み込めませんでした：' + esc(d && d.error) + '</div>'; return; }
+    D = d; drawDev(d.device); drawNav(); draw(); sum();
+  }, function(m){ $('list').innerHTML = '<div class="msg ng">読み込めませんでした：' + esc(m) + '</div>'; });
+}
+function drawDev(dv){
+  var s = dv && dv.secondsAgo, t;
+  if (s == null) t = '🔴 店のPC 不明';
+  else if (s <= 30) t = '🟢 店のPC つながっています';
+  else if (s <= 300) t = '🟡 店のPC ' + Math.round(s / 60 + 0.5) + '分前';
+  else t = '🔴 店のPC 止まっているかも';
+  $('dev').textContent = t;
+  $('dev').dataset.bad = (s == null || s > 300) ? '1' : '';
+}
+function group(l){ return String(l.item || 'その他').replace(/（.*$/, '').replace(/\(.*$/, ''); }
+function groups(){ var m = [], seen = {}; D.labels.forEach(function(l){ var k = group(l); if (!seen[k]) { seen[k] = 1; m.push(k); } }); return m; }
+function drawNav(){
+  var h = '<button class="' + (filter ? '' : 'on') + '" data-k="">全部</button>';
+  groups().forEach(function(k){ h += '<button class="' + (filter === k ? 'on' : '') + '" data-k="' + esc(k) + '">' + esc(k) + '</button>'; });
+  $('nav').innerHTML = h;
+}
+$('nav').onclick = function(e){ var b = e.target.closest('button'); if (!b) return; filter = b.dataset.k; drawNav(); draw(); $('list').scrollTop = 0; };
+
+/* ---------- 一覧 ---------- */
+function lab(id){ for (var i = 0; i < D.labels.length; i++) if (D.labels[i].id === id) return D.labels[i]; return null; }
+function newRow(l){
+  var v = {};
+  l.fields.forEach(function(f){ v[f.name] = f.kind === 'date' ? addDays(l.dateDays) : (store(l.id + ':' + f.name) || ''); });
+  return { v: v, n: 0 };
+}
+function draw(){
+  var h = '';
+  D.labels.forEach(function(l){ if (!filter || group(l) === filter) h += card(l); });
+  $('list').innerHTML = h || '<div class="msg warn">出せるラベルがありません</div>';
+}
+function card(l){
+  var fixed = !l.fields.length && l.content && l.content.charAt(0) !== '（' ? han(l.content).replace(/\s/g, '') : '';
+  var h = '<div class="card s-' + esc(l.storage) + (count(l) ? ' has' : '') + '" id="c_' + l.id + '" data-id="' + l.id + '"><div class="top"><div class="nm"><b>' + esc(l.name) + '</b>' +
+    (l.storage ? '<span class="tag s-' + esc(l.storage) + '">' + esc(l.storage) + '</span>' : '') + (fixed ? '<small>' + esc(fixed) + '</small>' : '') + '</div>';
+  if (!l.fields.length) return h + stepper(Q[l.id] || 0, -1) + '</div></div>';
+  h += '</div>';
+  var rows = Q[l.id] || [newRow(l)];
+  Q[l.id] = rows;
+  rows.forEach(function(r, i){
+    h += '<div class="spec" data-i="' + i + '">';
+    l.fields.forEach(function(f){
+      if (f.kind === 'date') {
+        h += '<div class="fl"><label>' + esc(f.name) + '</label><input class="d" type="date" data-f="' + esc(f.name) + '" value="' + esc(r.v[f.name]) + '"><span class="u">' + esc(labelDate(r.v[f.name])) + '</span></div>';
+      } else {
+        h += '<div class="fl"><label>' + esc(f.name) + '</label><input class="w" inputmode="numeric" data-f="' + esc(f.name) + '" value="' + esc(r.v[f.name]) + '" placeholder="000"><span class="u">' + esc(f.unit || '') + '</span></div>';
+        if (f.recent && f.recent.length) {
+          h += '<div class="chips">' + f.recent.map(function(x){ return '<button data-f="' + esc(f.name) + '" data-v="' + esc(x) + '" class="' + (String(r.v[f.name]) === String(x) ? 'on' : '') + '">' + esc(x) + esc(f.unit || '') + '</button>'; }).join('') + '</div>';
+        }
+      }
+    });
+    h += '<div class="cnt">' + (rows.length > 1 ? '<button class="del" data-del="1">✕ この行をけす</button>' : '') + stepper(r.n, i) + '</div></div>';
+  });
+  h += '<button class="add">＋ 別の' + esc(l.fields[0].name) + 'を足す</button>';
+  return h + '</div>';
+}
+function stepper(n, i){
+  return '<div class="step" data-i="' + i + '"><button data-d="-1">−</button><input class="n" inputmode="numeric" value="' + (n || '') + '" placeholder="0"><button data-d="1">＋</button></div>';
+}
+function count(l){ var q = Q[l.id]; if (!q) return 0; if (!l.fields.length) return q; return q.reduce(function(a, r){ return a + (r.n || 0); }, 0); }
+function redrawCard(id){ var el = $('c_' + id); if (el) el.outerHTML = card(lab(id)); }
+function rowOf(el){ var s = el.closest('.spec'); return s ? Number(s.dataset.i) : -1; }
+
+// 一覧の中の操作はここでまとめて受ける
+$('list').addEventListener('click', function(e){
+  var c = e.target.closest('.card'); if (!c) return;
+  var l = lab(c.dataset.id), b = e.target.closest('button'); if (!b) return;
+  var i = rowOf(b);
+  if (b.dataset.d) {
+    var d = Number(b.dataset.d);
+    if (!l.fields.length) Q[l.id] = clampN((Q[l.id] || 0) + d); else Q[l.id][i].n = clampN((Q[l.id][i].n || 0) + d);
+  } else if (b.dataset.v) {
+    Q[l.id][i].v[b.dataset.f] = b.dataset.v;
+  } else if (b.dataset.del) {
+    Q[l.id].splice(i, 1);
+  } else if (b.classList.contains('add')) {
+    Q[l.id].push(newRow(l));
+  } else return;
+  redrawCard(l.id); sum();
+});
+$('list').addEventListener('input', function(e){
+  var c = e.target.closest('.card'); if (!c) return;
+  var l = lab(c.dataset.id), t = e.target, i = rowOf(t);
+  if (t.classList.contains('n')) {
+    var n = clampN(t.value);
+    if (!l.fields.length) Q[l.id] = n; else Q[l.id][i].n = n;
+    if (t.value !== '' && String(n) !== t.value) t.value = n || '';
+    c.classList.toggle('has', count(l) > 0);
+  } else if (t.classList.contains('w')) {
+    Q[l.id][i].v[t.dataset.f] = han(t.value).replace(/[^0-9]/g, '').slice(0, 4);
+    if (t.value !== Q[l.id][i].v[t.dataset.f]) t.value = Q[l.id][i].v[t.dataset.f];
+    var chips = t.closest('.spec').querySelectorAll('.chips button[data-f="' + t.dataset.f + '"]');
+    for (var k = 0; k < chips.length; k++) chips[k].classList.toggle('on', chips[k].dataset.v === Q[l.id][i].v[t.dataset.f]);
+  } else if (t.classList.contains('d')) {
+    Q[l.id][i].v[t.dataset.f] = t.value;
+    t.nextElementSibling.textContent = labelDate(t.value);
+  }
+  sum();
+});
+$('list').addEventListener('focusin', function(e){ if (e.target.classList.contains('n')) e.target.select(); });
+
+/* ---------- 集める ---------- */
+function collect(){
+  var out = [], bad = [];
+  D.labels.forEach(function(l){
+    var q = Q[l.id]; if (!q) return;
+    if (!l.fields.length) { if (q > 0) out.push({ label: l.id, values: {}, copies: q, title: l.name, spec: l.storage || '' }); return; }
+    q.forEach(function(r){
+      if (!r.n) return;
+      var v = {}, spec = [], miss = '';
+      l.fields.forEach(function(f){
+        var x = r.v[f.name];
+        if (f.kind === 'date') { x = labelDate(x); if (!x) miss = miss || f.name; else spec.push(f.name + ' ' + x); }
+        else { if (!/^[0-9]{1,4}$/.test(x || '') || Number(x) < 1) miss = miss || f.name; else spec.push(x + (f.unit || '')); }
+        v[f.name] = x;
+      });
+      if (miss) { bad.push(l.name + '：' + miss + 'が入っていません'); return; }
+      out.push({ label: l.id, values: v, copies: r.n, title: l.name, spec: spec.join('・'), keep: l });
+    });
+  });
+  return { items: out, bad: bad };
+}
+function sum(){
+  if (!D) return;
+  var c = collect(), n = c.items.reduce(function(a, x){ return a + x.copies; }, 0);
+  $('sumN').textContent = n; $('sumK').textContent = c.items.length;
+  $('bAll').disabled = $('bStep').disabled = !(n > 0 || c.bad.length) || !!RUN; // 入れ忘れは押したときに知らせる
+}
+// 印刷に回した重さを、このスマホに覚えておく（次に行を足したときの初期値）
+function remember(items){
+  items.forEach(function(x){ if (!x.keep) return; x.keep.fields.forEach(function(f){ if (f.kind !== 'date' && x.values[f.name]) store(x.label + ':' + f.name, x.values[f.name]); }); });
+}
+
+/* ---------- 確かめて印刷 ---------- */
+$('bAll').onclick = function(){ confirmRun('all'); };
+$('bStep').onclick = function(){ confirmRun('step'); };
+function confirmRun(mode){
+  var c = collect();
+  if (c.bad.length) { showErr(c.bad.join('\n')); return; }
+  var n = c.items.reduce(function(a, x){ return a + x.copies; }, 0);
+  var h = '<h3>' + (mode === 'all' ? 'まとめて印刷' : '1つずつ印刷') + '（合計 ' + n + ' 枚）</h3>';
+  if ($('dev').dataset.bad) h += '<div class="msg warn">店のPCとつながっていないようです。依頼は並びますが、PCが動くまで印刷されません。</div>';
+  if (mode === 'step') h += '<div class="msg ok">1件ずつ出します。貼り終わったら「次を印刷」を押してください。</div>';
+  c.items.forEach(function(x){ h += '<div class="row"><div class="t">' + esc(x.title) + '<small>' + esc(x.spec) + '</small></div><div class="c">' + x.copies + ' 枚</div></div>'; });
+  h += '<div class="acts"><button class="btn sub" onclick="closeSheet()">戻る</button><button class="btn main" id="go">印刷する</button></div>';
+  openSheet(h);
+  $('go').onclick = function(){
+    this.disabled = true;
+    remember(c.items);
+    RUN = { mode: mode, items: c.items, ids: [], st: {}, idx: 0 };
+    sum();
+    if (mode === 'all') send(c.items); else send([c.items[0]]);
+  };
+}
+function send(list){
+  RUN.sending = true;
+  call('ui_enqueue', [list.map(function(x){ return { label: x.label, values: x.values, copies: x.copies }; }), '画面'], function(r){
+    if (!RUN) return;
+    RUN.sending = false;
+    if (!r || !r.ok) { failSend(r && r.error); return; }
+    RUN.ids = RUN.ids.concat(r.ids);
+    drawRun(); poll();
+  }, function(m){ if (RUN) RUN.sending = false; failSend(m); });
+}
+// 並べられなかったとき：最初の1件なら全部やめる。1つずつの途中なら、その1件を「まだ」に戻して知らせる
+function failSend(m){
+  if (RUN && RUN.ids.length) { if (RUN.mode === 'step') RUN.idx = RUN.ids.length - 1; RUN.err = m; drawRun(); return; }
+  RUN = null; sum(); showErr(m);
+}
+function poll(){
+  clearTimeout(timer);
+  if (!RUN || !RUN.ids.length) return;
+  call('ui_status', [RUN.ids], function(r){
+    if (!RUN) return;
+    RUN.st = (r && r.jobs) || {}; drawDev(r && r.device); drawRun();
+    if (!settled()) timer = setTimeout(poll, 3000);
+  }, function(){ timer = setTimeout(poll, 5000); });
+}
+function isEnd(s){ return s === '済み' || s === '失敗' || s === '取消'; }
+function settled(){ return !!RUN && RUN.ids.every(function(id){ return isEnd((RUN.st[id] || {}).status); }); }
+function finished(){ return !RUN || (!RUN.sending && settled() && RUN.ids.length === RUN.items.length); }
+var MARK = { '待ち': '⏳ 待ち', '印刷中': '🖨 印刷中', '済み': '✅ 済み', '失敗': '❌ 失敗', '取消': '— 取消' };
+function drawRun(){
+  var done = 0, h = '<h3>印刷の様子</h3>';
+  if (RUN.err) h += '<div class="msg ng">' + esc(RUN.err) + '</div>';
+  RUN.items.forEach(function(x, i){
+    var id = RUN.ids[i], j = id ? (RUN.st[id] || { status: '待ち' }) : null;
+    var s = j ? esc(MARK[j.status] || j.status) : 'まだ';
+    if (j && j.status === '済み') done++;
+    h += '<div class="row"><div class="t">' + esc(x.title) + '<small>' + esc(x.spec) + (j && j.status === '失敗' && j.note ? ' ' + esc(j.note) : '') + '</small></div><div class="c">' + x.copies + ' 枚</div><div class="s">' + s + '</div>' +
+      (j && j.status === '待ち' ? '<button class="x" onclick="cancelJob(\'' + esc(id) + '\')">取消</button>' : '') + '</div>';
+  });
+  var acts = '';
+  if (finished()) {
+    acts = '<button class="btn main" onclick="finish()">おわり（' + done + '/' + RUN.items.length + ' 件 済み）</button>';
+  } else {
+    acts = RUN.sending ? '' : '<button class="btn sub" onclick="stopRun()">やめる</button>';
+    if (RUN.mode === 'step' && RUN.ids.length < RUN.items.length) {
+      var nx = RUN.items[RUN.ids.length], ready = settled() && !RUN.sending;
+      acts += '<button class="btn main" ' + (ready ? '' : 'disabled') + ' onclick="nextOne(this)">次を印刷：' + esc(nx.title) + ' ' + esc(nx.spec) + ' ×' + nx.copies + '</button>';
+    }
+  }
+  openSheet(h + '<div class="acts">' + acts + '</div>');
+}
+function nextOne(btn){
+  if (!RUN || RUN.sending || !settled() || RUN.ids.length >= RUN.items.length) return;
+  if (btn) btn.disabled = true;
+  RUN.err = ''; RUN.idx = RUN.ids.length;
+  send([RUN.items[RUN.idx]]);
+}
+function cancelJob(id){
+  call('ui_cancel', [id], function(r){ if (RUN) RUN.err = r && r.ok ? '' : (r && r.error); poll(); },
+    function(m){ if (RUN) RUN.err = m; poll(); });
+}
+function stopRun(){
+  if (!RUN || RUN.sending) return;
+  var waiting = RUN.ids.filter(function(id){ return (RUN.st[id] || { status: '待ち' }).status === '待ち'; });
+  var left = waiting.length, late = 0;
+  if (!left) { finish(); return; }
+  var one = function(){ if (--left > 0) return; if (late) { RUN.err = late + ' 件は印刷が始まっていたので取り消せませんでした'; RUN.items = RUN.items.slice(0, RUN.ids.length); poll(); } else finish(); };
+  waiting.forEach(function(id){ call('ui_cancel', [id], function(r){ if (!r || !r.ok) late++; one(); }, function(){ late++; one(); }); });
+}
+function finish(){ clearTimeout(timer); RUN = null; Q = {}; $('sheet').style.display = 'none'; load(); }
+function openSheet(h){ $('sheetIn').innerHTML = h; $('sheet').style.display = 'flex'; }
+function closeSheet(){ if (RUN && RUN.ids.length) { drawRun(); return; } $('sheet').style.display = 'none'; }
+
+setInterval(function(){ if (!RUN && !document.hidden) call('ui_status', [[]], function(r){ drawDev(r && r.device); }, function(){}); }, 30000);
+document.addEventListener('visibilitychange', function(){ if (!document.hidden && !RUN) call('ui_status', [[]], function(r){ drawDev(r && r.device); }, function(){}); });
+load();
+</script>
+</body>
+</html>
