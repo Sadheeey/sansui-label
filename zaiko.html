@@ -8,7 +8,10 @@
 <meta name="apple-mobile-web-app-title" content="在庫">
 <meta name="theme-color" content="#f6f4f0">
 <meta name="robots" content="noindex, nofollow">
-<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="application-name" content="在庫">
+<link rel="manifest" href="zaiko.webmanifest">
+<link rel="apple-touch-icon" href="zaiko-180.png">
+<link rel="icon" type="image/png" href="zaiko-192.png">
 <title>在庫カウンター</title>
 <!-- 【山水】在庫カウンター（#25：商品在庫・仕込み在庫・ベーコンの塩漬け中）。受付（ラベル発行の Apps Script）の zk_data / zk_add を呼ぶ -->
 <style>
@@ -17,39 +20,42 @@
 html,body,button,input{touch-action:manipulation}
 html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
 body{background:var(--bg);color:var(--ink);font-family:-apple-system,"Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;font-size:16px;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
-header{flex:none;display:flex;align-items:center;gap:8px;padding:10px 12px 8px;border-bottom:1px solid var(--line)}
-header h1{flex:1;font-size:18px;margin:0}
-header a{font-size:13px;color:var(--sub);text-decoration:none;border:1px solid var(--line);border-radius:16px;padding:6px 10px;background:#fff}
-nav{flex:none;padding:8px 10px;display:flex;gap:6px;overflow-x:auto;border-bottom:1px solid var(--line);scrollbar-width:none}
+header{flex:none;display:flex;align-items:center;gap:8px;padding:16px 16px 8px;border-bottom:1px solid var(--line)}
+header h1{flex:1;font-size:18px;font-weight:600;margin:0}
+header a{font-size:13px;color:var(--sub);text-decoration:none;border:1px solid var(--line);border-radius:16px;padding:8px 16px;background:#fff}
+nav{flex:none;padding:8px 16px;display:flex;gap:8px;overflow-x:auto;border-bottom:1px solid var(--line);scrollbar-width:none}
 nav::-webkit-scrollbar{display:none}
-nav button{flex:none;border:1px solid var(--line);background:#fff;border-radius:20px;padding:7px 13px;font-size:14px;color:var(--ink)}
+nav button{flex:none;border:1px solid var(--line);background:#fff;border-radius:16px;padding:8px 16px;font-size:14px;color:var(--sub)}
 nav button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
-main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 10px 30px}
-h2{font-size:13px;color:var(--sub);margin:14px 4px 6px;font-weight:normal}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:8px}
-.card b{font-size:16px}
-.card .bk{font-size:11px;color:var(--sub);margin-left:6px}
-.rw{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed var(--line)}
+main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 16px 32px}
+h2{font-size:13px;color:var(--sub);margin:16px 0 8px;padding-left:16px;font-weight:normal}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 16px;margin-bottom:8px}
+.card b{font-size:16px;font-weight:600;display:inline-block;padding-top:8px}
+.card .bk{font-size:11px;color:var(--sub);margin-left:8px}
+.rw{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
 .rw:first-of-type{border-top:none}
-.sp{flex:1;font-size:17px;font-weight:bold}
+.sp{flex:1;font-size:17px;font-weight:500}
 .sp small{font-size:12px;font-weight:normal;color:var(--sub)}
-.rw button{min-width:48px;padding:0 6px;height:44px;border-radius:10px;border:1px solid var(--line);background:#faf8f5;font-size:24px;line-height:1;color:var(--ink)}
-.n{min-width:64px;text-align:center;font-size:22px;font-weight:bold;border:none;background:none;padding:4px 0;color:var(--ink)}
+.rw button{min-width:48px;padding:0 8px;height:48px;border-radius:8px;border:1px solid var(--line);background:#faf8f5;font-size:24px;line-height:1;color:var(--ink)}
+.n{min-width:64px;text-align:center;font-size:22px;font-weight:600;border:none;background:none;padding:0;color:var(--ink)}
 .n.pend{color:var(--main)}
 .n small{display:block;font-size:11px;font-weight:normal;color:var(--sub)}
-.msg{padding:10px;border-radius:10px;margin:8px 0;font-size:14px;white-space:pre-line}
+.msg{padding:8px 16px;border-radius:8px;margin:8px 0;font-size:14px;line-height:1.6;white-space:pre-line}
 .msg.ng{background:#fdecea;color:var(--ng)}
 .msg.ok{background:#e8f5ec;color:var(--ok)}
-#toast{position:fixed;left:10px;right:10px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:5;display:none}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:5;display:none}
 #sheet{position:fixed;top:0;left:0;right:0;bottom:0;z-index:10;background:rgba(0,0,0,.5);display:none;align-items:flex-end}
-#sheet .in{background:#fff;width:100%;border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
-#sheet h3{margin:0 0 10px;font-size:17px}
-#sheet input{width:100%;height:52px;font-size:26px;text-align:center;border:1px solid var(--line);border-radius:10px}
-.acts{display:flex;gap:8px;margin-top:14px}
-.btn{flex:1;border:none;border-radius:12px;padding:12px 14px;font-size:16px;font-weight:bold}
+#sheet .in{background:#fff;width:100%;border-radius:16px 16px 0 0;padding:24px 16px calc(16px + env(safe-area-inset-bottom))}
+#sheet h3{margin:0 0 16px;font-size:17px;font-weight:600}
+#sheet input{width:100%;height:56px;font-size:24px;text-align:center;border:1px solid var(--line);border-radius:8px}
+.acts{display:flex;gap:8px;margin-top:16px}
+.btn{flex:1;border:none;border-radius:8px;padding:8px 16px;min-height:48px;font-size:16px;font-weight:600}
 .btn.main{background:var(--main);color:#fff}
 .btn.sub{background:#fff;border:1px solid var(--main);color:var(--main)}
-#load{padding:40px;text-align:center;color:var(--sub)}
+#load{padding:40px 0;color:var(--sub)}
+/* 状態の点（絵文字は使わない） */
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 8px 0 0;vertical-align:1px;background:var(--line)}
+.dot.ok{background:var(--ok)}.dot.warn{background:#b7791f}.dot.ng{background:var(--ng)}.dot.early{background:#fff;border:1px solid var(--sub)}
 </style>
 </head>
 <body>
@@ -73,6 +79,7 @@ function call(body, ok, ng){
 }
 function toast(m, bad){ var t = $('toast'); t.className = 'msg ' + (bad ? 'ng' : 'ok'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(function(){ t.style.display = 'none'; }, bad ? 6000 : 2500); }
 
+if ('serviceWorker' in navigator && /github\.io$/.test(location.hostname)) { try { navigator.serviceWorker.register('sw.js').catch(function(){}); } catch (e) {} }
 function load(){
   call({ action: 'zk_data' }, function(d){
     if (!d || !d.ok) { $('list').innerHTML = '<div class="msg ng">読み込めませんでした：' + esc(d && d.error) + '</div>'; return; }
@@ -96,7 +103,7 @@ function row(it, sp){ return it.rows.filter(function(r){ return r.spec === sp; }
 // 規格の見せ方：重さは「200g」、漬けた日は「11/21漬け」
 function specText(it, sp){ return !sp ? '' : it.byDate ? sp + '漬け' : sp + 'g'; }
 // 漬けてからの日数の印（記録：漬け日数は5〜15日・平均9日）
-function daysMark(d){ return d < 0 ? '🔴' : d >= 15 ? '🔴' : d >= 12 ? '🟡' : d >= 5 ? '🟢' : '⏳'; }
+function daysMark(d){ return '<span class="dot ' + (d < 0 || d >= 15 ? 'ng' : d >= 12 ? 'warn' : d >= 5 ? 'ok' : 'early') + '"></span>'; }
 function shownN(it, r){ var k = key(it.id, r.spec); return r2(r.n + (PEND[k] || 0) + (INF[k] || 0)); }
 function draw(){
   var h = D.error ? '<div class="msg ng">' + esc(D.error) + '</div>' : '', g0 = null;
@@ -104,14 +111,14 @@ function draw(){
     if (filter && it.group !== filter) return;
     if (it.group !== g0) { g0 = it.group; h += '<h2>' + esc(g0) + '</h2>'; }
     h += '<div class="card"><b>' + esc(it.name) + '</b>' + (it.book === 'meisai' ? '<span class="bk">明細一覧表の在庫・古いカットから引く</span>' : '');
-    if (it.byDate && !it.rows.length) h += '<div class="hint" style="font-size:12px;color:var(--sub);padding:6px 0">いま塩漬け中のものはありません</div>';
+    if (it.byDate && !it.rows.length) h += '<div class="hint" style="font-size:12px;color:var(--sub);padding:8px 0">いま塩漬け中のものはありません</div>';
     it.rows.forEach(function(r){
       var k = key(it.id, r.spec), p = PEND[k] || 0;
-      var label = it.byDate ? esc(r.spec) + '<small>漬け・' + daysMark(r.days) + ' ' + (r.days < 0 ? '日付を確かめて（減らせます）' : r.days ? '漬けて' + r.days + '日' : '今日漬けた') + '</small>' : (r.spec ? esc(r.spec) + '<small>g</small>' : '');
+      var label = it.byDate ? esc(r.spec) + '<small>漬け　' + daysMark(r.days) + (r.days < 0 ? '日付を確かめて（減らせます）' : r.days ? '漬けて' + r.days + '日' : '今日漬けた') + '</small>' : (r.spec ? esc(r.spec) + '<small>g</small>' : '');
       h += '<div class="rw" data-id="' + esc(it.id) + '" data-sp="' + esc(r.spec) + '"><span class="sp">' + label + '</span>' +
         '<button data-d="-1">' + (stepOf(it) !== 1 ? '−' + fmt(stepOf(it)) : '−') + '</button><button class="n' + (p || BUSY[k] ? ' pend' : '') + '" data-to="1">' + fmt(shownN(it, r)) + '<small>' + esc(it.unit) + (p ? '（送信待ち）' : BUSY[k] ? '（送信中）' : '') + '</small></button><button data-d="1">' + (stepOf(it) !== 1 ? '＋' + fmt(stepOf(it)) : '＋') + '</button></div>';
     });
-    if (it.byDate) h += '<button class="addd" data-add="' + esc(it.id) + '" style="margin-top:6px;border:1px dashed var(--sub);background:none;border-radius:10px;padding:9px;width:100%;font-size:14px;color:var(--sub)">＋ 漬けた日を足す</button>';
+    if (it.byDate) h += '<button class="addd" data-add="' + esc(it.id) + '" style="margin:8px 0;border:1px dashed var(--line);background:none;border-radius:8px;padding:8px;width:100%;min-height:48px;font-size:14px;color:var(--sub)">＋ 漬けた日を足す</button>';
     h += '</div>';
   });
   $('list').innerHTML = h || '<div class="msg ng">品目がありません</div>';
