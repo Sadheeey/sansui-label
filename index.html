@@ -143,6 +143,16 @@ function showErr(m){ openSheet('<h3>うまくいきませんでした</h3><div c
 /* ---------- 日付 ---------- */
 function ymd(d){ return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function addDays(n){ var d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + (n || 0)); return ymd(d); }
+// 期限の初期値：{n, unit:'d'|'m'}。月は「同じ日」（11/30＋3か月→2/28 のように月末に寄せる）
+function addPeriod(l){
+  var p = l.datePeriod || (l.dateDays != null ? { n: l.dateDays, unit: 'd' } : null);
+  if (!p) return addDays(0);
+  if (p.unit !== 'm') return addDays(p.n);
+  var d = new Date(); d.setHours(12, 0, 0, 0);
+  var day = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + p.n);
+  var last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, last)); return ymd(d);
+}
 function labelDate(s){ var p = String(s).split('-'); return p.length === 3 ? (p[0].slice(2) + '.' + Number(p[1]) + '.' + Number(p[2])) : ''; } // 2026-12-07 → 26.12.7（数字の全角は受付でそろえる）
 
 /* ---------- 読み込み ---------- */
@@ -191,12 +201,15 @@ function hidden(l, f){ try { return JSON.parse(store('hide:' + l.id + ':' + f.na
 function gridVals(l){
   var f = gridField(l); if (!f) return [];
   var hide = hidden(l, f);
-  return (f.recent || []).filter(function(v){ return Number(v) >= 1 && hide.indexOf(String(v)) < 0; }).sort(function(a, b){ return Number(a) - Number(b); });
+  // 決めた候補（ラベル一覧のR列）は書いた順で先に、最近使った重さはその後ろに小さい順で
+  var fixed = (f.choices || []).map(String);
+  var more = (f.recent || []).map(String).filter(function(v){ return fixed.indexOf(v) < 0; }).sort(function(a, b){ return Number(a) - Number(b); });
+  return fixed.concat(more).filter(function(v){ return Number(v) >= 1 && hide.indexOf(v) < 0; });
 }
 function newRow(l){ var v = {}; numFields(l).forEach(function(f){ v[f.name] = ''; }); return { v: v, n: 0 }; }
 function state(l){
   if (!Q[l.id]) {
-    var d = {}; dateFields(l).forEach(function(f){ d[f.name] = addDays(l.dateDays); });
+    var d = {}; dateFields(l).forEach(function(f){ d[f.name] = addPeriod(l); });
     Q[l.id] = { grid: {}, rows: [newRow(l)], d: d };
   }
   return Q[l.id];
