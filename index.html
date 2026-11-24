@@ -23,7 +23,8 @@ html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
 body{background:var(--bg);color:var(--ink);font-family:-apple-system,"Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;font-size:16px;
   display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
 header{flex:none;display:flex;align-items:center;gap:8px;padding:16px 16px 8px}
-header h1{flex:1;font-size:18px;font-weight:600;margin:0}
+header h1{font-size:18px;font-weight:600;margin:0}
+header #dev{flex:1;min-width:0;font-size:12px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 header a{font-size:13px;color:var(--sub);text-decoration:none;border:1px solid var(--line);border-radius:16px;padding:8px 16px;background:#fff}
 nav{flex:none;padding:8px 16px;display:flex;gap:8px;overflow-x:auto;border-bottom:1px solid var(--line);scrollbar-width:none}
 nav::-webkit-scrollbar{display:none}
@@ -77,12 +78,10 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior
 .add{margin-top:8px;border:1px dashed var(--line);background:none;border-radius:8px;padding:8px;width:100%;font-size:14px;color:var(--sub)}
 .del{border:none;background:none;color:var(--sub);font-size:14px;padding:8px 0}
 footer{flex:none;background:#fff;border-top:1px solid var(--line);padding:8px 16px calc(8px + env(safe-area-inset-bottom));display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-footer .sum{flex:1;min-width:0;font-size:13px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-footer .sum small{display:block;font-size:12px;color:var(--sub)}
-footer .btn{flex:none;white-space:nowrap}
+footer .btn{flex:1;white-space:nowrap;padding:8px}
+footer .btn small{font-size:13px;font-weight:normal;margin-left:4px}
 footer .meta{flex-basis:100%;display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:0 16px;white-space:nowrap;font-size:12px;color:var(--sub)}
 footer .meta a{color:var(--sub)}
-footer .sum b{font-size:20px;font-weight:600}
 #dev{font-size:12px;color:var(--sub);white-space:nowrap}
 #ns{display:none;font-size:12px;color:var(--sub);white-space:nowrap}
 #ns input{vertical-align:-2px;margin:0 4px 0 0}
@@ -117,16 +116,16 @@ footer .sum b{font-size:20px;font-weight:600}
 .ic{width:16px;height:16px;vertical-align:-3px;margin-right:4px;flex:none}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:1px;background:var(--sub)}
 .dot.ok{background:var(--ok)}.dot.warn{background:var(--amb)}.dot.ng{background:var(--ng)}
+#ptr{height:0;overflow:hidden;text-align:center;font-size:12px;color:var(--sub);line-height:40px;transition:height .2s}
 </style>
 </head>
 <body>
-<header><h1>ラベル発行</h1><a href="zaiko.html" id="zkLink">在庫カウンター</a></header>
+<header><h1>ラベル発行</h1><span id="dev">店のPC 確認中…</span><a href="zaiko.html" id="zkLink">在庫カウンター</a></header>
 <nav id="nav"></nav>
 <main id="list"><div id="load">読み込み中…</div></main>
 <div id="bar"><div class="hd" id="barHd"></div><div class="ls" id="barLs"></div></div>
 <footer>
-  <div class="meta"><span id="dev">店のPC 確認中…</span><label id="ns"><input type="checkbox" id="noStock">在庫に入れない</label></div>
-  <div class="sum">合計 <b id="sumN">0</b> 枚<small><span id="sumK">0</span>件</small></div>
+  <div class="meta" id="meta"><label id="ns"><input type="checkbox" id="noStock">在庫に入れない</label></div>
   <button class="btn sub" id="bStep" disabled>1種類ずつ</button>
   <button class="btn main" id="bAll" disabled>まとめて印刷</button>
 </footer>
@@ -196,11 +195,17 @@ function load(){
   if (window.google && google.script && google.script.run) { var zl = $('zkLink'); if (zl) zl.style.display = 'none'; }
   call('ui_data', [], function(d){
     if (!d || !d.ok) { $('list').innerHTML = '<div class="msg ng">読み込めませんでした：' + esc(d && d.error) + '</div>'; return; }
-    D = d; drawDev(d.device); applyDrafts(); drawNav(); draw(); sum();
+    D = d; drawDev(d.device); applyDrafts(); keepQ(); drawNav(); draw(); sum();
     $('ns').style.display = d.labels.some(function(l){ return l.stock; }) ? 'inline-block' : 'none';
+    $('meta').style.display = $('ns').style.display === 'none' ? 'none' : ''; // 在庫に入れない品が無いときは行ごと出さない
   }, function(m){ $('list').innerHTML = '<div class="msg ng">読み込めませんでした：' + esc(m) + '</div>'; });
 }
 // #24：Claudeが書いておいた本数（今日の分）を、入力が空のときだけ入れておく
+// 引っぱって更新したとき、入れかけの数を1分だけ持ち越す
+function keepQ(){
+  var v = store('pull'); if (!v) return; store('pull', '');
+  try { var o = JSON.parse(v); if (Date.now() - o.t < 60000 && o.q) Q = o.q; } catch (e) {}
+}
 var DRAFT_NOTE = '', DRAFT_ASK = false;   // 下書きが入ったときだけ、印刷の前に一覧を見せる（#16 検証役の指摘）
 function applyDrafts(){
   DRAFT_NOTE = '';
@@ -457,7 +462,8 @@ function collect(){
 function sum(){
   if (!D) return;
   var c = collect(), n = c.items.reduce(function(a, x){ return a + x.copies; }, 0);
-  $('sumN').textContent = n; $('sumK').textContent = c.items.length;
+  $('bAll').innerHTML = 'まとめて印刷' + (n > 0 ? '<small>' + n + '枚</small>' : '');
+  $('bStep').innerHTML = '1種類ずつ' + (c.items.length > 1 ? '<small>' + c.items.length + '種類</small>' : '');
   $('bAll').disabled = $('bStep').disabled = !(n > 0 || c.bad.length); // 入れ忘れは押したときに知らせる
 }
 
@@ -649,6 +655,23 @@ function closeSheet(){ $('sheet').style.display = 'none'; }
 setInterval(function(){ if (!document.hidden) call('ui_status', [[]], function(r){ drawDev(r && r.device); }, function(){}); }, 30000);
 document.addEventListener('visibilitychange', function(){ if (!document.hidden) { call('ui_status', [[]], function(r){ drawDev(r && r.device); }, function(){}); poll(); } });
 load();
+
+// 下に引っぱって更新（ホーム画面から開くとブラウザの更新ボタンが無いため）。入れかけの数は下書きとして残る
+(function(){
+  var m = $('list'), y0 = null, dy = 0, P = document.createElement('div'); P.id = 'ptr'; m.parentNode.insertBefore(P, m);
+  m.addEventListener('touchstart', function(e){ y0 = m.scrollTop <= 0 ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
+  m.addEventListener('touchmove', function(e){
+    if (y0 == null) return; dy = e.touches[0].clientY - y0;
+    if (dy <= 0 || m.scrollTop > 0) { P.style.height = '0'; return; }
+    P.style.transition = 'none'; P.style.height = Math.min(dy / 2, 48) + 'px'; P.textContent = dy > 120 ? '離すと更新します' : '引っぱって更新';
+  }, { passive: true });
+  m.addEventListener('touchend', function(){
+    P.style.transition = '';
+    if (y0 != null && dy > 120 && m.scrollTop <= 0) { P.style.height = '40px'; P.textContent = '更新しています…'; if (typeof Q === 'object' && typeof store === 'function' && $('zkLink')) store('pull', JSON.stringify({ t: Date.now(), q: Q })); setTimeout(function(){ location.reload(); }, 50); }
+    else P.style.height = '0';
+    y0 = null; dy = 0;
+  });
+})();
 </script>
 </body>
 </html>

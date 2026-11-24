@@ -56,6 +56,7 @@ h2{font-size:13px;color:var(--sub);margin:16px 0 8px;padding-left:16px;font-weig
 /* 状態の点（絵文字は使わない） */
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 8px 0 0;vertical-align:1px;background:var(--line)}
 .dot.ok{background:var(--ok)}.dot.warn{background:#b7791f}.dot.ng{background:var(--ng)}.dot.early{background:#fff;border:1px solid var(--sub)}
+#ptr{height:0;overflow:hidden;text-align:center;font-size:12px;color:var(--sub);line-height:40px;transition:height .2s}
 </style>
 </head>
 <body>
@@ -206,6 +207,23 @@ document.addEventListener('visibilitychange', function(){
   if (!Object.keys(PEND).some(function(k){ return PEND[k]; }) && !Object.keys(BUSY).some(function(k){ return BUSY[k]; })) load();
 });
 load();
+
+// 下に引っぱって更新（ホーム画面から開くとブラウザの更新ボタンが無いため）。入れかけの数は下書きとして残る
+(function(){
+  var m = $('list'), y0 = null, dy = 0, P = document.createElement('div'); P.id = 'ptr'; m.parentNode.insertBefore(P, m);
+  m.addEventListener('touchstart', function(e){ y0 = m.scrollTop <= 0 ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
+  m.addEventListener('touchmove', function(e){
+    if (y0 == null) return; dy = e.touches[0].clientY - y0;
+    if (dy <= 0 || m.scrollTop > 0) { P.style.height = '0'; return; }
+    P.style.transition = 'none'; P.style.height = Math.min(dy / 2, 48) + 'px'; P.textContent = dy > 120 ? '離すと更新します' : '引っぱって更新';
+  }, { passive: true });
+  m.addEventListener('touchend', function(){
+    P.style.transition = '';
+    if (y0 != null && dy > 120 && m.scrollTop <= 0) { P.style.height = '40px'; P.textContent = '更新しています…'; setTimeout(function(){ location.reload(); }, 50); }
+    else P.style.height = '0';
+    y0 = null; dy = 0;
+  });
+})();
 </script>
 </body>
 </html>
