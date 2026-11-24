@@ -33,7 +33,7 @@ h2{font-size:13px;color:var(--sub);margin:14px 4px 6px;font-weight:normal}
 .rw:first-of-type{border-top:none}
 .sp{flex:1;font-size:17px;font-weight:bold}
 .sp small{font-size:12px;font-weight:normal;color:var(--sub)}
-.rw button{width:48px;height:44px;border-radius:10px;border:1px solid var(--line);background:#faf8f5;font-size:24px;line-height:1;color:var(--ink)}
+.rw button{min-width:48px;padding:0 6px;height:44px;border-radius:10px;border:1px solid var(--line);background:#faf8f5;font-size:24px;line-height:1;color:var(--ink)}
 .n{min-width:64px;text-align:center;font-size:22px;font-weight:bold;border:none;background:none;padding:4px 0;color:var(--ink)}
 .n.pend{color:var(--main)}
 .n small{display:block;font-size:11px;font-weight:normal;color:var(--sub)}
@@ -87,9 +87,13 @@ function drawNav(){
 }
 $('nav').onclick = function(e){ var b = e.target.closest('button'); if (!b) return; filter = b.dataset.g; drawNav(); draw(); $('list').scrollTop = 0; };
 function key(id, sp){ return id + '|' + sp; }
+function r2(x){ return Math.round(Number(x) * 100) / 100; }          // 小数の足し算のずれを消す
+function fmt(x){ return String(r2(x)); }                             // 2.50 → 2.5
+function stepOf(it){ return it.book === 'meisai' ? 1 : (Number(it.step) > 0 ? Number(it.step) : 1); }
+function whole(it){ return it.book === 'meisai' || stepOf(it) === Math.floor(stepOf(it)); }
 function item(id){ return D.items.filter(function(x){ return x.id === id; })[0]; }
 function row(it, sp){ return it.rows.filter(function(r){ return r.spec === sp; })[0]; }
-function shownN(it, r){ var k = key(it.id, r.spec); return r.n + (PEND[k] || 0) + (INF[k] || 0); }
+function shownN(it, r){ var k = key(it.id, r.spec); return r2(r.n + (PEND[k] || 0) + (INF[k] || 0)); }
 function draw(){
   var h = D.error ? '<div class="msg ng">' + esc(D.error) + '</div>' : '', g0 = null;
   D.items.forEach(function(it){
@@ -99,7 +103,7 @@ function draw(){
     it.rows.forEach(function(r){
       var k = key(it.id, r.spec), p = PEND[k] || 0;
       h += '<div class="rw" data-id="' + esc(it.id) + '" data-sp="' + esc(r.spec) + '"><span class="sp">' + (r.spec ? esc(r.spec) + '<small>g</small>' : '') + '</span>' +
-        '<button data-d="-1">−</button><button class="n' + (p || BUSY[k] ? ' pend' : '') + '" data-to="1">' + shownN(it, r) + '<small>' + esc(it.unit) + (p ? '（送信待ち）' : BUSY[k] ? '（送信中）' : '') + '</small></button><button data-d="1">＋</button></div>';
+        '<button data-d="-1">' + (stepOf(it) !== 1 ? '−' + fmt(stepOf(it)) : '−') + '</button><button class="n' + (p || BUSY[k] ? ' pend' : '') + '" data-to="1">' + fmt(shownN(it, r)) + '<small>' + esc(it.unit) + (p ? '（送信待ち）' : BUSY[k] ? '（送信中）' : '') + '</small></button><button data-d="1">' + (stepOf(it) !== 1 ? '＋' + fmt(stepOf(it)) : '＋') + '</button></div>';
     });
     h += '</div>';
   });
@@ -110,9 +114,9 @@ $('list').addEventListener('click', function(e){
   var b = e.target.closest('button'), rw = e.target.closest('.rw'); if (!b || !rw) return;
   var it = item(rw.dataset.id), r = row(it, rw.dataset.sp), k = key(it.id, r.spec);
   if (b.dataset.to) { askTo(it, r); return; }
-  var d = Number(b.dataset.d);
-  if (shownN(it, r) + d < 0) { toast('0より少なくはできません', true); return; }
-  PEND[k] = (PEND[k] || 0) + d; draw();
+  var d = r2(Number(b.dataset.d) * stepOf(it));
+  if (r2(shownN(it, r) + d) < 0) { toast('0より少なくはできません', true); return; }
+  PEND[k] = r2((PEND[k] || 0) + d); draw();
   clearTimeout(TIMER[k]); TIMER[k] = setTimeout(function(){ flush(it.id, r.spec); }, 1200);
 });
 function flush(id, sp){
@@ -120,14 +124,14 @@ function flush(id, sp){
   if (!d) return;
   clearTimeout(TIMER[k]);
   var many = (BUSY[k] || 0) > 0;   // 前の送信の返事を待たずに送る（差を送るので二重には足されない）
-  BUSY[k] = (BUSY[k] || 0) + 1; PEND[k] = 0; INF[k] = (INF[k] || 0) + d; draw();
-  var done = function(){ BUSY[k] = Math.max(0, (BUSY[k] || 0) - 1); INF[k] = (INF[k] || 0) - d; };
+  BUSY[k] = (BUSY[k] || 0) + 1; PEND[k] = 0; INF[k] = r2((INF[k] || 0) + d); draw();
+  var done = function(){ BUSY[k] = Math.max(0, (BUSY[k] || 0) - 1); INF[k] = r2((INF[k] || 0) - d); };
   call({ action: 'zk_add', id: id, spec: sp, delta: d }, function(res){
     done();
     var it = item(id), r = it && row(it, sp); if (!r) return;
     if (res && res.ok) {
       if (!many && !BUSY[k]) r.n = res.n;
-      toast(it.name + (sp ? ' ' + sp + 'g' : '') + '：' + (d > 0 ? '+' : '') + d + ' → ' + res.n + it.unit + (res.where ? '（' + res.where + '）' : ''));
+      toast(it.name + (sp ? ' ' + sp + 'g' : '') + '：' + (d > 0 ? '+' : '') + fmt(d) + ' → ' + fmt(res.n) + it.unit + (res.where ? '（' + res.where + '）' : ''));
       if (many && !BUSY[k] && !PEND[k]) load();   // 重なって送ったときは、全部そろってから読み直す
       else draw();
     } else { toast('直せませんでした：' + ((res && res.error) || ''), true); if (!BUSY[k] && !PEND[k]) load(); else draw(); }
@@ -141,19 +145,19 @@ function flushAll(){ Object.keys(PEND).forEach(function(k){ if (PEND[k]) { var p
 function askTo(it, r){
   var k = key(it.id, r.spec);
   if (PEND[k] || BUSY[k]) { toast('送信が終わってから押してください', true); return; }
-  $('sheetIn').innerHTML = '<h3>' + esc(it.name) + (r.spec ? ' ' + esc(r.spec) + 'g' : '') + '：今の数</h3><input id="to" inputmode="numeric" autocomplete="off" value="' + r.n + '">' +
+  $('sheetIn').innerHTML = '<h3>' + esc(it.name) + (r.spec ? ' ' + esc(r.spec) + 'g' : '') + '：今の数（' + esc(it.unit) + '）</h3><input id="to" inputmode="' + (whole(it) ? 'numeric' : 'decimal') + '" autocomplete="off" value="' + fmt(r.n) + '">' +
     '<div class="acts"><button class="btn sub" onclick="closeSheet()">やめる</button><button class="btn main" id="goTo">この数にする</button></div>';
   $('sheet').style.display = 'flex';
   var inp = $('to'); setTimeout(function(){ inp.focus(); inp.select(); }, 50);
   $('goTo').onclick = function(){
-    var v = String(inp.value).replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim();
-    if (!/^[0-9]{1,3}$/.test(v)) { toast('0〜999の数で入れてください', true); return; }
+    var v = String(inp.value).replace(/[０-９．]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim();
+    if (!(whole(it) ? /^[0-9]{1,3}$/ : /^[0-9]{1,3}(\.[0-9]{1,2})?$/).test(v)) { toast(whole(it) ? '0〜999の整数で入れてください' : '0〜999の数（小数は2けたまで）で入れてください', true); return; }
     this.disabled = true; BUSY[k] = 1; closeSheet(); draw();
     var id = it.id, sp = r.spec;
     call({ action: 'zk_add', id: id, spec: sp, to: Number(v) }, function(res){
       BUSY[k] = 0;
-      var it2 = item(id), r2 = it2 && row(it2, sp); if (!r2) return;
-      if (res && res.ok) { r2.n = res.n; toast(it2.name + (sp ? ' ' + sp + 'g' : '') + '：' + res.n + it2.unit + 'にしました'); draw(); }
+      var it2 = item(id), rw2 = it2 && row(it2, sp); if (!rw2) return;
+      if (res && res.ok) { rw2.n = res.n; toast(it2.name + (sp ? ' ' + sp + 'g' : '') + '：' + fmt(res.n) + it2.unit + 'にしました'); draw(); }
       else { toast('直せませんでした：' + ((res && res.error) || ''), true); load(); }
     }, function(m){ BUSY[k] = 0; toast('通信が切れました。数を読み直します（' + m + '）', true); load(); });
   };
