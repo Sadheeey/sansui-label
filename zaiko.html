@@ -10,7 +10,7 @@
 <meta name="robots" content="noindex, nofollow">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>在庫カウンター</title>
-<!-- 【山水】在庫カウンター（#25 1段目：商品在庫）。受付（ラベル発行の Apps Script）の zk_data / zk_add を呼ぶ -->
+<!-- 【山水】在庫カウンター（#25：商品在庫・仕込み在庫・ベーコンの塩漬け中）。受付（ラベル発行の Apps Script）の zk_data / zk_add を呼ぶ -->
 <style>
 :root{--bg:#f6f4f0;--card:#fff;--ink:#222;--sub:#777;--line:#e4e0d8;--main:#b23a2a;--ok:#2e7d4f;--ng:#c0392b}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -93,6 +93,10 @@ function stepOf(it){ return it.book === 'meisai' ? 1 : (Number(it.step) > 0 ? Nu
 function whole(it){ return it.book === 'meisai' || stepOf(it) === Math.floor(stepOf(it)); }
 function item(id){ return D.items.filter(function(x){ return x.id === id; })[0]; }
 function row(it, sp){ return it.rows.filter(function(r){ return r.spec === sp; })[0]; }
+// 規格の見せ方：重さは「200g」、漬けた日は「11/21漬け」
+function specText(it, sp){ return !sp ? '' : it.byDate ? sp + '漬け' : sp + 'g'; }
+// 漬けてからの日数の印（記録：漬け日数は5〜15日・平均9日）
+function daysMark(d){ return d < 0 ? '🔴' : d >= 15 ? '🔴' : d >= 12 ? '🟡' : d >= 5 ? '🟢' : '⏳'; }
 function shownN(it, r){ var k = key(it.id, r.spec); return r2(r.n + (PEND[k] || 0) + (INF[k] || 0)); }
 function draw(){
   var h = D.error ? '<div class="msg ng">' + esc(D.error) + '</div>' : '', g0 = null;
@@ -100,18 +104,23 @@ function draw(){
     if (filter && it.group !== filter) return;
     if (it.group !== g0) { g0 = it.group; h += '<h2>' + esc(g0) + '</h2>'; }
     h += '<div class="card"><b>' + esc(it.name) + '</b>' + (it.book === 'meisai' ? '<span class="bk">明細一覧表の在庫・古いカットから引く</span>' : '');
+    if (it.byDate && !it.rows.length) h += '<div class="hint" style="font-size:12px;color:var(--sub);padding:6px 0">いま塩漬け中のものはありません</div>';
     it.rows.forEach(function(r){
       var k = key(it.id, r.spec), p = PEND[k] || 0;
-      h += '<div class="rw" data-id="' + esc(it.id) + '" data-sp="' + esc(r.spec) + '"><span class="sp">' + (r.spec ? esc(r.spec) + '<small>g</small>' : '') + '</span>' +
+      var label = it.byDate ? esc(r.spec) + '<small>漬け・' + daysMark(r.days) + ' ' + (r.days < 0 ? '日付を確かめて（減らせます）' : r.days ? '漬けて' + r.days + '日' : '今日漬けた') + '</small>' : (r.spec ? esc(r.spec) + '<small>g</small>' : '');
+      h += '<div class="rw" data-id="' + esc(it.id) + '" data-sp="' + esc(r.spec) + '"><span class="sp">' + label + '</span>' +
         '<button data-d="-1">' + (stepOf(it) !== 1 ? '−' + fmt(stepOf(it)) : '−') + '</button><button class="n' + (p || BUSY[k] ? ' pend' : '') + '" data-to="1">' + fmt(shownN(it, r)) + '<small>' + esc(it.unit) + (p ? '（送信待ち）' : BUSY[k] ? '（送信中）' : '') + '</small></button><button data-d="1">' + (stepOf(it) !== 1 ? '＋' + fmt(stepOf(it)) : '＋') + '</button></div>';
     });
+    if (it.byDate) h += '<button class="addd" data-add="' + esc(it.id) + '" style="margin-top:6px;border:1px dashed var(--sub);background:none;border-radius:10px;padding:9px;width:100%;font-size:14px;color:var(--sub)">＋ 漬けた日を足す</button>';
     h += '</div>';
   });
   $('list').innerHTML = h || '<div class="msg ng">品目がありません</div>';
 }
 // ＋／−はすぐ画面に出し、押し終わって1.2秒たったらまとめて送る
 $('list').addEventListener('click', function(e){
-  var b = e.target.closest('button'), rw = e.target.closest('.rw'); if (!b || !rw) return;
+  var b = e.target.closest('button');
+  if (b && b.dataset.add) { askAdd(item(b.dataset.add)); return; }
+  var rw = e.target.closest('.rw'); if (!b || !rw) return;
   var it = item(rw.dataset.id), r = row(it, rw.dataset.sp), k = key(it.id, r.spec);
   if (b.dataset.to) { askTo(it, r); return; }
   var d = r2(Number(b.dataset.d) * stepOf(it));
@@ -131,8 +140,8 @@ function flush(id, sp){
     var it = item(id), r = it && row(it, sp); if (!r) return;
     if (res && res.ok) {
       if (!many && !BUSY[k]) r.n = res.n;
-      toast(it.name + (sp ? ' ' + sp + 'g' : '') + '：' + (d > 0 ? '+' : '') + fmt(d) + ' → ' + fmt(res.n) + it.unit + (res.where ? '（' + res.where + '）' : ''));
-      if (many && !BUSY[k] && !PEND[k]) load();   // 重なって送ったときは、全部そろってから読み直す
+      toast(it.name + (sp ? ' ' + specText(it, sp) : '') + '：' + (d > 0 ? '+' : '') + fmt(d) + ' → ' + fmt(res.n) + it.unit + (res.where ? '（' + res.where + '）' : ''));
+      if ((many || (it.byDate && res.n === 0)) && !BUSY[k] && !PEND[k]) load();   // 漬けた日の行が0になったら読み直して消す   // 重なって送ったときは、全部そろってから読み直す
       else draw();
     } else { toast('直せませんでした：' + ((res && res.error) || ''), true); if (!BUSY[k] && !PEND[k]) load(); else draw(); }
   }, function(m){
@@ -145,7 +154,7 @@ function flushAll(){ Object.keys(PEND).forEach(function(k){ if (PEND[k]) { var p
 function askTo(it, r){
   var k = key(it.id, r.spec);
   if (PEND[k] || BUSY[k]) { toast('送信が終わってから押してください', true); return; }
-  $('sheetIn').innerHTML = '<h3>' + esc(it.name) + (r.spec ? ' ' + esc(r.spec) + 'g' : '') + '：今の数（' + esc(it.unit) + '）</h3><input id="to" inputmode="' + (whole(it) ? 'numeric' : 'decimal') + '" autocomplete="off" value="' + fmt(r.n) + '">' +
+  $('sheetIn').innerHTML = '<h3>' + esc(it.name) + (r.spec ? ' ' + esc(specText(it, r.spec)) : '') + '：今の数（' + esc(it.unit) + '）</h3><input id="to" inputmode="' + (whole(it) ? 'numeric' : 'decimal') + '" autocomplete="off" value="' + fmt(r.n) + '">' +
     '<div class="acts"><button class="btn sub" onclick="closeSheet()">やめる</button><button class="btn main" id="goTo">この数にする</button></div>';
   $('sheet').style.display = 'flex';
   var inp = $('to'); setTimeout(function(){ inp.focus(); inp.select(); }, 50);
@@ -157,9 +166,28 @@ function askTo(it, r){
     call({ action: 'zk_add', id: id, spec: sp, to: Number(v) }, function(res){
       BUSY[k] = 0;
       var it2 = item(id), rw2 = it2 && row(it2, sp); if (!rw2) return;
-      if (res && res.ok) { rw2.n = res.n; toast(it2.name + (sp ? ' ' + sp + 'g' : '') + '：' + fmt(res.n) + it2.unit + 'にしました'); draw(); }
+      if (res && res.ok) { rw2.n = res.n; toast(it2.name + (sp ? ' ' + specText(it2, sp) : '') + '：' + fmt(res.n) + it2.unit + 'にしました'); if (it2.byDate && res.n === 0) load(); else draw(); }
       else { toast('直せませんでした：' + ((res && res.error) || ''), true); load(); }
     }, function(m){ BUSY[k] = 0; toast('通信が切れました。数を読み直します（' + m + '）', true); load(); });
+  };
+}
+// 漬けた日を足す（日付と枚数）。同じ日がもうあれば、その日に足す
+function askAdd(it){
+  var d = new Date(), v = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  $('sheetIn').innerHTML = '<h3>' + esc(it.name) + '：漬けた日を足す</h3><div style="display:flex;gap:8px"><input id="ad" type="date" value="' + v + '" max="' + v + '" style="flex:1.4;font-size:20px"><input id="an" inputmode="numeric" autocomplete="off" placeholder="枚数" style="flex:1"></div>' +
+    '<div class="acts"><button class="btn sub" onclick="closeSheet()">やめる</button><button class="btn main" id="goAdd">足す</button></div>';
+  $('sheet').style.display = 'flex';
+  setTimeout(function(){ $('an').focus(); }, 50);
+  $('goAdd').onclick = function(){
+    var dv = String($('ad').value).split('-'), n = String($('an').value).replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim();
+    if (dv.length !== 3) { toast('漬けた日を選んでください', true); return; }
+    if (!/^[0-9]{1,3}$/.test(n) || Number(n) < 1) { toast('枚数を1〜999で入れてください', true); return; }
+    var sp = Number(dv[1]) + '/' + Number(dv[2]);
+    this.disabled = true; closeSheet();
+    call({ action: 'zk_add', id: it.id, spec: sp, delta: Number(n) }, function(res){
+      if (res && res.ok) toast(it.name + ' ' + sp + '漬け：+' + n + ' → ' + fmt(res.n) + it.unit); else toast('足せませんでした：' + ((res && res.error) || ''), true);
+      if (!Object.keys(PEND).some(function(k){ return PEND[k]; }) && !Object.keys(BUSY).some(function(k){ return BUSY[k]; })) load();
+    }, function(m){ toast('通信が切れました。数を読み直します（' + m + '）', true); load(); });
   };
 }
 function closeSheet(){ $('sheet').style.display = 'none'; }
