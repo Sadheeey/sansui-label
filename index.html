@@ -109,7 +109,7 @@ footer .sum b{font-size:20px}
 <main id="list"><div id="load">読み込み中…</div></main>
 <div id="bar"><div class="hd" id="barHd"></div><div class="ls" id="barLs"></div></div>
 <footer>
-  <div class="sum">合計 <b id="sumN">0</b> 枚（<span id="sumK">0</span>件）<br><span id="dev">店のPC 確認中…</span><br><label id="ns"><input type="checkbox" id="noStock">在庫に入れない（試し刷り・刷り直し）</label></div>
+  <div class="sum">合計 <b id="sumN">0</b> 枚（<span id="sumK">0</span>件）<br><span id="dev">店のPC 確認中…</span> <a href="zaiko.html" id="zkLink" style="font-size:11px;color:var(--sub)">在庫カウンター</a><br><label id="ns"><input type="checkbox" id="noStock">在庫に入れない（試し刷り・刷り直し）</label></div>
   <button class="btn sub" id="bStep" disabled>1種類ずつ</button>
   <button class="btn main" id="bAll" disabled>まとめて印刷</button>
 </footer>
@@ -175,6 +175,7 @@ function labelDate(s){ var p = String(s).split('-'); return p.length === 3 ? (p[
 
 /* ---------- 読み込み ---------- */
 function load(){
+  if (window.google && google.script && google.script.run) { var zl = $('zkLink'); if (zl) zl.style.display = 'none'; }
   call('ui_data', [], function(d){
     if (!d || !d.ok) { $('list').innerHTML = '<div class="msg ng">読み込めませんでした：' + esc(d && d.error) + '</div>'; return; }
     D = d; drawDev(d.device); applyDrafts(); drawNav(); draw(); sum();

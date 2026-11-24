@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="在庫">
+<meta name="theme-color" content="#f6f4f0">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>在庫カウンター</title>
+<!-- 【山水】在庫カウンター（#25 1段目：商品在庫）。受付（ラベル発行の Apps Script）の zk_data / zk_add を呼ぶ -->
+<style>
+:root{--bg:#f6f4f0;--card:#fff;--ink:#222;--sub:#777;--line:#e4e0d8;--main:#b23a2a;--ok:#2e7d4f;--ng:#c0392b}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body,button,input{touch-action:manipulation}
+html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
+body{background:var(--bg);color:var(--ink);font-family:-apple-system,"Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;font-size:16px;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
+header{flex:none;display:flex;align-items:center;gap:8px;padding:10px 12px 8px;border-bottom:1px solid var(--line)}
+header h1{flex:1;font-size:18px;margin:0}
+header a{font-size:13px;color:var(--sub);text-decoration:none;border:1px solid var(--line);border-radius:16px;padding:6px 10px;background:#fff}
+nav{flex:none;padding:8px 10px;display:flex;gap:6px;overflow-x:auto;border-bottom:1px solid var(--line);scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{flex:none;border:1px solid var(--line);background:#fff;border-radius:20px;padding:7px 13px;font-size:14px;color:var(--ink)}
+nav button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 10px 30px}
+h2{font-size:13px;color:var(--sub);margin:14px 4px 6px;font-weight:normal}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:8px}
+.card b{font-size:16px}
+.card .bk{font-size:11px;color:var(--sub);margin-left:6px}
+.rw{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed var(--line)}
+.rw:first-of-type{border-top:none}
+.sp{flex:1;font-size:17px;font-weight:bold}
+.sp small{font-size:12px;font-weight:normal;color:var(--sub)}
+.rw button{width:48px;height:44px;border-radius:10px;border:1px solid var(--line);background:#faf8f5;font-size:24px;line-height:1;color:var(--ink)}
+.n{min-width:64px;text-align:center;font-size:22px;font-weight:bold;border:none;background:none;padding:4px 0;color:var(--ink)}
+.n.pend{color:var(--main)}
+.n small{display:block;font-size:11px;font-weight:normal;color:var(--sub)}
+.msg{padding:10px;border-radius:10px;margin:8px 0;font-size:14px;white-space:pre-line}
+.msg.ng{background:#fdecea;color:var(--ng)}
+.msg.ok{background:#e8f5ec;color:var(--ok)}
+#toast{position:fixed;left:10px;right:10px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:5;display:none}
+#sheet{position:fixed;top:0;left:0;right:0;bottom:0;z-index:10;background:rgba(0,0,0,.5);display:none;align-items:flex-end}
+#sheet .in{background:#fff;width:100%;border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
+#sheet h3{margin:0 0 10px;font-size:17px}
+#sheet input{width:100%;height:52px;font-size:26px;text-align:center;border:1px solid var(--line);border-radius:10px}
+.acts{display:flex;gap:8px;margin-top:14px}
+.btn{flex:1;border:none;border-radius:12px;padding:12px 14px;font-size:16px;font-weight:bold}
+.btn.main{background:var(--main);color:#fff}
+.btn.sub{background:#fff;border:1px solid var(--main);color:var(--main)}
+#load{padding:40px;text-align:center;color:var(--sub)}
+</style>
+</head>
+<body>
+<header><h1>在庫カウンター</h1><a href="./">ラベル発行へ</a></header>
+<nav id="nav"></nav>
+<main id="list"><div id="load">読み込み中…</div></main>
+<div id="toast"></div>
+<div id="sheet"><div class="in" id="sheetIn"></div></div>
+<script>
+var EXEC = 'https://script.google.com/macros/s/AKfycbxVxiq_zZ6LFz_cWhz-RmKAFZ2ccub7rMukNTPgRcwmVwTB3gzC7A7fm0Pg1Ume7xG0/exec'; // リポジトリには書かない。公開するときに受付のURLへ置き換える
+var D = null, filter = '', PEND = {}, TIMER = {}, BUSY = {}, INF = {};   // INF：送って返事を待っている差
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function call(body, ok, ng){
+  if (EXEC.indexOf('__') === 0) { ng('受付の住所が入っていません（公開の手順を確かめてください）'); return; }
+  // keepalive：画面を閉じたり裏に回したりしても、送り終える（増減の記録が消えないように）
+  fetch(EXEC, { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'text/plain;charset=utf-8' }, keepalive: body.action === 'zk_add' })
+    .then(function(r){ if (!r.ok) throw new Error('受付につながりません（' + r.status + '）'); return r.json(); })
+    .then(ok).catch(function(e){ ng(String(e && e.message || e)); });
+}
+function toast(m, bad){ var t = $('toast'); t.className = 'msg ' + (bad ? 'ng' : 'ok'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(function(){ t.style.display = 'none'; }, bad ? 6000 : 2500); }
+
+function load(){
+  call({ action: 'zk_data' }, function(d){
+    if (!d || !d.ok) { $('list').innerHTML = '<div class="msg ng">読み込めませんでした：' + esc(d && d.error) + '</div>'; return; }
+    D = d; drawNav(); draw();
+  }, function(m){ $('list').innerHTML = '<div class="msg ng">読み込めませんでした：' + esc(m) + '</div>'; });
+}
+function groups(){ var g = []; D.items.forEach(function(it){ if (g.indexOf(it.group) < 0) g.push(it.group); }); return g; }
+function drawNav(){
+  var h = '<button class="' + (filter ? '' : 'on') + '" data-g="">全部</button>';
+  groups().forEach(function(g){ h += '<button class="' + (filter === g ? 'on' : '') + '" data-g="' + esc(g) + '">' + esc(g) + '</button>'; });
+  $('nav').innerHTML = h;
+}
+$('nav').onclick = function(e){ var b = e.target.closest('button'); if (!b) return; filter = b.dataset.g; drawNav(); draw(); $('list').scrollTop = 0; };
+function key(id, sp){ return id + '|' + sp; }
+function item(id){ return D.items.filter(function(x){ return x.id === id; })[0]; }
+function row(it, sp){ return it.rows.filter(function(r){ return r.spec === sp; })[0]; }
+function shownN(it, r){ var k = key(it.id, r.spec); return r.n + (PEND[k] || 0) + (INF[k] || 0); }
+function draw(){
+  var h = D.error ? '<div class="msg ng">' + esc(D.error) + '</div>' : '', g0 = null;
+  D.items.forEach(function(it){
+    if (filter && it.group !== filter) return;
+    if (it.group !== g0) { g0 = it.group; h += '<h2>' + esc(g0) + '</h2>'; }
+    h += '<div class="card"><b>' + esc(it.name) + '</b>' + (it.book === 'meisai' ? '<span class="bk">明細一覧表の在庫・古いカットから引く</span>' : '');
+    it.rows.forEach(function(r){
+      var k = key(it.id, r.spec), p = PEND[k] || 0;
+      h += '<div class="rw" data-id="' + esc(it.id) + '" data-sp="' + esc(r.spec) + '"><span class="sp">' + (r.spec ? esc(r.spec) + '<small>g</small>' : '') + '</span>' +
+        '<button data-d="-1">−</button><button class="n' + (p || BUSY[k] ? ' pend' : '') + '" data-to="1">' + shownN(it, r) + '<small>' + esc(it.unit) + (p ? '（送信待ち）' : BUSY[k] ? '（送信中）' : '') + '</small></button><button data-d="1">＋</button></div>';
+    });
+    h += '</div>';
+  });
+  $('list').innerHTML = h || '<div class="msg ng">品目がありません</div>';
+}
+// ＋／−はすぐ画面に出し、押し終わって1.2秒たったらまとめて送る
+$('list').addEventListener('click', function(e){
+  var b = e.target.closest('button'), rw = e.target.closest('.rw'); if (!b || !rw) return;
+  var it = item(rw.dataset.id), r = row(it, rw.dataset.sp), k = key(it.id, r.spec);
+  if (b.dataset.to) { askTo(it, r); return; }
+  var d = Number(b.dataset.d);
+  if (shownN(it, r) + d < 0) { toast('0より少なくはできません', true); return; }
+  PEND[k] = (PEND[k] || 0) + d; draw();
+  clearTimeout(TIMER[k]); TIMER[k] = setTimeout(function(){ flush(it.id, r.spec); }, 1200);
+});
+function flush(id, sp){
+  var k = key(id, sp), d = PEND[k] || 0;
+  if (!d) return;
+  clearTimeout(TIMER[k]);
+  var many = (BUSY[k] || 0) > 0;   // 前の送信の返事を待たずに送る（差を送るので二重には足されない）
+  BUSY[k] = (BUSY[k] || 0) + 1; PEND[k] = 0; INF[k] = (INF[k] || 0) + d; draw();
+  var done = function(){ BUSY[k] = Math.max(0, (BUSY[k] || 0) - 1); INF[k] = (INF[k] || 0) - d; };
+  call({ action: 'zk_add', id: id, spec: sp, delta: d }, function(res){
+    done();
+    var it = item(id), r = it && row(it, sp); if (!r) return;
+    if (res && res.ok) {
+      if (!many && !BUSY[k]) r.n = res.n;
+      toast(it.name + (sp ? ' ' + sp + 'g' : '') + '：' + (d > 0 ? '+' : '') + d + ' → ' + res.n + it.unit + (res.where ? '（' + res.where + '）' : ''));
+      if (many && !BUSY[k] && !PEND[k]) load();   // 重なって送ったときは、全部そろってから読み直す
+      else draw();
+    } else { toast('直せませんでした：' + ((res && res.error) || ''), true); if (!BUSY[k] && !PEND[k]) load(); else draw(); }
+  }, function(m){
+    // 届いたか分からないので、送り直さずに読み直す（二重に足さないように）
+    done(); toast('通信が切れました。数を読み直します（' + m + '）', true); if (!BUSY[k]) load();
+  });
+}
+function flushAll(){ Object.keys(PEND).forEach(function(k){ if (PEND[k]) { var p = k.split('|'); flush(p[0], p.slice(1).join('|')); } }); }
+// 数を押すと「今の数」を打ち直せる（初めて数えるとき・棚卸しのとき）。記録は差で残る
+function askTo(it, r){
+  var k = key(it.id, r.spec);
+  if (PEND[k] || BUSY[k]) { toast('送信が終わってから押してください', true); return; }
+  $('sheetIn').innerHTML = '<h3>' + esc(it.name) + (r.spec ? ' ' + esc(r.spec) + 'g' : '') + '：今の数</h3><input id="to" inputmode="numeric" autocomplete="off" value="' + r.n + '">' +
+    '<div class="acts"><button class="btn sub" onclick="closeSheet()">やめる</button><button class="btn main" id="goTo">この数にする</button></div>';
+  $('sheet').style.display = 'flex';
+  var inp = $('to'); setTimeout(function(){ inp.focus(); inp.select(); }, 50);
+  $('goTo').onclick = function(){
+    var v = String(inp.value).replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim();
+    if (!/^[0-9]{1,3}$/.test(v)) { toast('0〜999の数で入れてください', true); return; }
+    this.disabled = true; BUSY[k] = 1; closeSheet(); draw();
+    var id = it.id, sp = r.spec;
+    call({ action: 'zk_add', id: id, spec: sp, to: Number(v) }, function(res){
+      BUSY[k] = 0;
+      var it2 = item(id), r2 = it2 && row(it2, sp); if (!r2) return;
+      if (res && res.ok) { r2.n = res.n; toast(it2.name + (sp ? ' ' + sp + 'g' : '') + '：' + res.n + it2.unit + 'にしました'); draw(); }
+      else { toast('直せませんでした：' + ((res && res.error) || ''), true); load(); }
+    }, function(m){ BUSY[k] = 0; toast('通信が切れました。数を読み直します（' + m + '）', true); load(); });
+  };
+}
+function closeSheet(){ $('sheet').style.display = 'none'; }
+$('sheet').addEventListener('click', function(e){ if (e.target === this) closeSheet(); });
+// 画面に戻ったら読み直す（ほかの人・ラベル発行で変わっているかもしれないので）。送信待ちがあるときは送ってから
+window.addEventListener('pagehide', flushAll);
+document.addEventListener('visibilitychange', function(){
+  if (document.hidden) { flushAll(); return; }
+  if (!Object.keys(PEND).some(function(k){ return PEND[k]; }) && !Object.keys(BUSY).some(function(k){ return BUSY[k]; })) load();
+});
+load();
+</script>
+</body>
+</html>
