@@ -38,6 +38,7 @@ h2{font-size:13px;color:var(--sub);margin:16px 0 8px;padding-left:16px;font-weig
 .rw{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
 .rw:first-of-type{border-top:none}
 .sp{flex:1;font-size:17px;font-weight:500}
+.sp .lots{display:block;font-size:12px;font-weight:normal;color:var(--sub);margin-top:4px}
 .sp small{font-size:12px;font-weight:normal;color:var(--sub)}
 .rw button{min-width:48px;padding:0 8px;height:48px;border-radius:8px;border:1px solid var(--line);background:#faf8f5;font-size:24px;line-height:1;color:var(--ink)}
 .n{min-width:64px;text-align:center;font-size:22px;font-weight:600;border:none;background:none;padding:0;color:var(--ink)}
@@ -109,6 +110,14 @@ function specText(it, sp){ return !sp ? '' : it.byDate ? sp + '漬け' : sp + 'g
 // 漬けてからの日数の印（記録：漬け日数は5〜15日・平均9日）
 function daysMark(d){ return '<span class="dot ' + (d < 0 || d >= 15 ? 'ng' : d >= 12 ? 'warn' : d >= 5 ? 'ok' : 'early') + '"></span>'; }
 function shownN(it, r){ var k = key(it.id, r.spec); return r2(r.n + (PEND[k] || 0) + (INF[k] || 0)); }
+// 送る前の＋−も、日ごとの残りに映して見せる（−は古い日から・＋はいちばん新しい日へ。受付と同じ足し引き）
+function shownLots(it, r){
+  var k = key(it.id, r.spec), d = (PEND[k] || 0) + (INF[k] || 0);
+  var L = (r.lots || []).map(function(x){ return { d: x.d, n: x.n }; });
+  if (d > 0) { if (L.length) L[L.length - 1].n += d; }
+  else for (var i = 0, left = -d; i < L.length && left > 0; i++) { var t = Math.min(left, L[i].n); L[i].n -= t; left -= t; }
+  return L.filter(function(x){ return x.n > 0; });
+}
 function draw(){
   var h = D.error ? '<div class="msg ng">' + esc(D.error) + '</div>' : '', g0 = null;
   D.items.forEach(function(it){
@@ -121,6 +130,9 @@ function draw(){
     it.rows.forEach(function(r){
       var k = key(it.id, r.spec), p = PEND[k] || 0;
       var label = it.byDate ? esc(r.spec) + '<small>漬け　' + daysMark(r.days) + (r.days < 0 ? '日付を確かめて（減らせます）' : r.days ? '漬けて' + r.days + '日' : '今日漬けた') + '</small>' : (r.spec ? esc(r.spec) + '<small>g</small>' : '');
+      // 明細一覧表の品目は、カットの日ごとの残りを古い順に出す（−はいちばん左の日から引く）
+      var lots = r.lots ? shownLots(it, r) : [];
+      if (lots.length) label += '<span class="lots">' + (lots.length > 1 ? '古い順 ' : '') + lots.map(function(L){ return esc(L.d) + '×' + fmt(L.n); }).join('・') + '</span>';
       h += '<div class="rw" data-id="' + esc(it.id) + '" data-sp="' + esc(r.spec) + '"><span class="sp">' + label + '</span>' +
         '<button data-d="-1">' + (stepOf(it) !== 1 ? '−' + fmt(stepOf(it)) : '−') + '</button><button class="n' + (p || BUSY[k] ? ' pend' : '') + '" data-to="1">' + fmt(shownN(it, r)) + '<small>' + esc(it.unit) + '' + '</small></button><button data-d="1">' + (stepOf(it) !== 1 ? '＋' + fmt(stepOf(it)) : '＋') + '</button></div>';
     });
@@ -152,6 +164,7 @@ function flush(id, sp){
     var it = item(id), r = it && row(it, sp); if (!r) return;
     if (res && res.ok) {
       if (!many && !BUSY[k]) r.n = res.n;
+      if (res.lots && !BUSY[k] && !PEND[k]) r.lots = res.lots;
       toast(it.name + (sp ? ' ' + specText(it, sp) : '') + '：' + (d > 0 ? '+' : '') + fmt(d) + ' → ' + fmt(res.n) + it.unit + (res.where ? '（' + res.where + '）' : ''));
       if ((many || (it.byDate && res.n === 0)) && !BUSY[k] && !PEND[k]) load();   // 漬けた日の行が0になったら読み直して消す   // 重なって送ったときは、全部そろってから読み直す
       else draw();
@@ -178,7 +191,7 @@ function askTo(it, r){
     call({ action: 'zk_add', id: id, spec: sp, to: Number(v) }, function(res){
       BUSY[k] = 0;
       var it2 = item(id), rw2 = it2 && row(it2, sp); if (!rw2) return;
-      if (res && res.ok) { rw2.n = res.n; toast(it2.name + (sp ? ' ' + specText(it2, sp) : '') + '：' + fmt(res.n) + it2.unit + 'にしました'); if (it2.byDate && res.n === 0) load(); else draw(); }
+      if (res && res.ok) { rw2.n = res.n; if (res.lots) rw2.lots = res.lots; toast(it2.name + (sp ? ' ' + specText(it2, sp) : '') + '：' + fmt(res.n) + it2.unit + 'にしました'); if (it2.byDate && res.n === 0) load(); else draw(); }
       else { toast('直せませんでした：' + ((res && res.error) || ''), true); load(); }
     }, function(m){ BUSY[k] = 0; toast('通信が切れました。数を読み直します（' + m + '）', true); load(); });
   };
