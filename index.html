@@ -208,7 +208,7 @@ function keepQ(){
   var v = store('pull'); if (!v) return; store('pull', '');
   try { var o = JSON.parse(v); if (Date.now() - o.t < 60000 && o.q) Q = o.q; } catch (e) {}
 }
-var DRAFT_NOTE = '', DRAFT_ASK = false;   // 下書きが入ったときだけ、印刷の前に一覧を見せる（#16 検証役の指摘）
+var DRAFT_NOTE = '', DRAFT_ASK = false, BATCH = 0;   // 下書きが入ったときだけ、印刷の前に一覧を見せる（#16 検証役の指摘）
 function applyDrafts(){
   DRAFT_NOTE = '';
   if (!D.drafts || !D.drafts.length || !D.labels.every(function(l){ return !count(l); })) return;
@@ -489,9 +489,12 @@ function run(mode, ok){
   // 前の印刷で済んだ分は、ここで帯から下ろす（それまでは「在庫から外す」を押せる）
   QUEUE = QUEUE.filter(function(x){ return !(isEnd(x.st) && (!part(x) || x.rp)) && !x.gone; });
   LAST_HD = LAST_LS = '';
+  // 印刷中・順番待ちがあるときに足した分は、割り込ませず列の最後に並べ、「次を印刷」で出す（束が混ざって貼り間違えないように・北村さん 11/25）
+  var wait = QUEUE.some(function(x){ return !x.gone && (x.held || x.retry || x.sending || !x.id || !isEnd(x.st) || (part(x) && !x.rp)); }); // 途中で止まり、残りをまだ選んでいない束も「進行中」
+  var bt = ++BATCH;
   c.items.forEach(function(x, i){
     var st = ns && (lab(x.label) || {}).stock;
-    QUEUE.push({ title: x.title, spec: x.spec + (st ? '・在庫に入れない' : ''), copies: x.copies, payload: { label: x.label, values: x.values, copies: x.copies, noStock: !!st }, held: mode === 'step' && i > 0, id: null, st: '', note: '' });
+    QUEUE.push({ title: x.title, spec: x.spec + (st ? '・在庫に入れない' : ''), copies: x.copies, payload: { label: x.label, values: x.values, copies: x.copies, noStock: !!st }, held: wait || (mode === 'step' && i > 0), batch: mode === 'step' ? bt + ':' + i : String(bt), id: null, st: '', note: '' });
   });
   Q = {}; DRAFT_NOTE = ''; $('noStock').checked = false; $('ns').classList.remove('on'); draw(); sum(); // 印刷中でも、すぐ次を入れられる
   sendPending();
@@ -569,7 +572,7 @@ function drawBar(){
     tx = ic('pause') + 'プリンターが止まっています<small style="color:var(--ng)">ラベル切れかもしれません。ロールを替えると、続きから刷ります</small>';
     if (!PAUSE_SHOWN) { PAUSE_SHOWN = true; BAR_OPEN = true; }
   } else {
-    tx = ic('print') + '印刷：済み ' + done + '/' + q.length + '件' + (held.length ? '<small>次：' + esc(held[0].title) + ' ' + esc(held[0].spec) + ' ×' + held[0].copies + '</small>' : '');
+    tx = ic('print') + '印刷：済み ' + done + '/' + q.length + '件' + (held.length ? '<small>次：' + esc(held[0].title) + ' ' + esc(held[0].spec) + ' ×' + held[0].copies + (function(){ var m = held.filter(function(y){ return y.batch === held[0].batch; }).length; return m > 1 ? ' ほか' + (m - 1) + '種類' : ''; })() + '</small>' : '');
     if (held.length) acts = '<button class="btn main nx" ' + (SENDING ? 'disabled' : '') + ' onclick="nextOne()">次を印刷</button>';
   }
   var nostock = q.filter(function(x){ return x.st === '済み' && String(x.note || '').indexOf('在庫に入れられません') >= 0; });
@@ -616,7 +619,7 @@ function part(x){
 function reprint(k, n){
   var x = QUEUE[k]; if (!x || x.rp) return;
   x.rp = n > 0 ? '残り' + n + '枚を並べた' : '刷らない';
-  if (n > 0) QUEUE.push({ title: x.title, spec: x.spec + '・残り', copies: n, payload: { label: x.payload.label, values: x.payload.values, copies: n, noStock: x.payload.noStock }, held: false, id: null, st: '', note: '' });
+  if (n > 0) QUEUE.splice(k + 1, 0, { title: x.title, spec: x.spec + '・残り', copies: n, payload: { label: x.payload.label, values: x.payload.values, copies: n, noStock: x.payload.noStock }, held: false, id: null, st: '', note: '' });
   LAST_HD = LAST_LS = ''; sendPending(); drawBar();
 }
 // 全部うまく済んだら、10秒で帯を自動で閉じる（一覧を開いているとき・途中で止まった分があるときは閉じない）
@@ -626,10 +629,12 @@ function autoClose(ok){
   if (AUTO_T) return;
   AUTO_T = setTimeout(function(){ AUTO_T = null; if (!BAR_OPEN && live().every(function(x){ return isEnd(x.st) && !part(x) || x.rp; })) { clearTimeout(timer); QUEUE = []; BAR_ERR = ''; LAST_HD = LAST_LS = ''; drawBar(); } }, 10000);
 }
+// 次の束を出す（「まとめて印刷」で足した束は、まとめて1回で出す）
 function nextOne(){
   if (SENDING) return;
   var x = QUEUE.filter(function(y){ return y.held && !y.gone; })[0]; if (!x) return;
-  x.held = false; BAR_ERR = ''; sendPending();
+  QUEUE.forEach(function(y){ if (y.held && !y.gone && y.batch === x.batch) y.held = false; });
+  BAR_ERR = ''; sendPending();
 }
 function cancelOne(k){
   var x = QUEUE[k]; if (!x) return;

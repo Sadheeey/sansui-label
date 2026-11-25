@@ -33,7 +33,8 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 16px 32
 h2{font-size:13px;color:var(--sub);margin:16px 0 8px;padding-left:16px;font-weight:normal}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 16px;margin-bottom:8px}
 .card b{font-size:16px;font-weight:600;display:inline-block;padding-top:8px}
-.card .bk{font-size:11px;color:var(--sub);margin-left:8px}
+.card .bk{display:block;font-size:11px;color:var(--sub)}
+.card .tot{font-size:14px;margin-left:8px;color:var(--ink)}
 .rw{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
 .rw:first-of-type{border-top:none}
 .sp{flex:1;font-size:17px;font-weight:500}
@@ -113,7 +114,9 @@ function draw(){
   D.items.forEach(function(it){
     if (filter && it.group !== filter) return;
     if (it.group !== g0) { g0 = it.group; h += '<h2>' + esc(g0) + '</h2>'; }
-    h += '<div class="card"><b>' + esc(it.name) + '</b>' + (it.book === 'meisai' ? '<span class="bk">明細一覧表の在庫・古いカットから引く</span>' : '');
+    // 生ベーコンは全規格の合計を見出しの横に出す（見るだけ・直すのは各規格の行で）
+    var tot = it.book === 'meisai' && it.rows.length > 1 ? it.rows.reduce(function(a, r){ return r2(a + shownN(it, r)); }, 0) : null;
+    h += '<div class="card"><b>' + esc(it.name) + '</b>' + (tot !== null ? '<span class="tot">計 ' + fmt(tot) + esc(it.unit) + '</span>' : '') + (it.book === 'meisai' ? '<span class="bk">明細一覧表の在庫・古いカットから引く</span>' : '');
     if (it.byDate && !it.rows.length) h += '<div class="hint" style="font-size:12px;color:var(--sub);padding:8px 0">いま塩漬け中のものはありません</div>';
     it.rows.forEach(function(r){
       var k = key(it.id, r.spec), p = PEND[k] || 0;
