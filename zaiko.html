@@ -119,14 +119,14 @@ function draw(){
       var k = key(it.id, r.spec), p = PEND[k] || 0;
       var label = it.byDate ? esc(r.spec) + '<small>漬け　' + daysMark(r.days) + (r.days < 0 ? '日付を確かめて（減らせます）' : r.days ? '漬けて' + r.days + '日' : '今日漬けた') + '</small>' : (r.spec ? esc(r.spec) + '<small>g</small>' : '');
       h += '<div class="rw" data-id="' + esc(it.id) + '" data-sp="' + esc(r.spec) + '"><span class="sp">' + label + '</span>' +
-        '<button data-d="-1">' + (stepOf(it) !== 1 ? '−' + fmt(stepOf(it)) : '−') + '</button><button class="n' + (p || BUSY[k] ? ' pend' : '') + '" data-to="1">' + fmt(shownN(it, r)) + '<small>' + esc(it.unit) + (p ? '（送信待ち）' : BUSY[k] ? '（送信中）' : '') + '</small></button><button data-d="1">' + (stepOf(it) !== 1 ? '＋' + fmt(stepOf(it)) : '＋') + '</button></div>';
+        '<button data-d="-1">' + (stepOf(it) !== 1 ? '−' + fmt(stepOf(it)) : '−') + '</button><button class="n' + (p || BUSY[k] ? ' pend' : '') + '" data-to="1">' + fmt(shownN(it, r)) + '<small>' + esc(it.unit) + '' + '</small></button><button data-d="1">' + (stepOf(it) !== 1 ? '＋' + fmt(stepOf(it)) : '＋') + '</button></div>';
     });
     if (it.byDate) h += '<button class="addd" data-add="' + esc(it.id) + '" style="margin:8px 0;border:1px dashed var(--line);background:none;border-radius:8px;padding:8px;width:100%;min-height:48px;font-size:14px;color:var(--sub)">＋ 漬けた日を足す</button>';
     h += '</div>';
   });
   $('list').innerHTML = h || '<div class="msg ng">品目がありません</div>';
 }
-// ＋／−はすぐ画面に出し、押し終わって1.2秒たったらまとめて送る
+// ＋／−はすぐ画面に出し、どこも押さなくなって3秒たったら、押した行をまとめて送る（北村さん 11/25）
 $('list').addEventListener('click', function(e){
   var b = e.target.closest('button');
   if (b && b.dataset.add) { askAdd(item(b.dataset.add)); return; }
@@ -136,12 +136,11 @@ $('list').addEventListener('click', function(e){
   var d = r2(Number(b.dataset.d) * stepOf(it));
   if (r2(shownN(it, r) + d) < 0) { toast('0より少なくはできません', true); return; }
   PEND[k] = r2((PEND[k] || 0) + d); draw();
-  clearTimeout(TIMER[k]); TIMER[k] = setTimeout(function(){ flush(it.id, r.spec); }, 1200);
+  clearTimeout(TIMER.all); TIMER.all = setTimeout(flushAll, 3000);
 });
 function flush(id, sp){
   var k = key(id, sp), d = PEND[k] || 0;
   if (!d) return;
-  clearTimeout(TIMER[k]);
   var many = (BUSY[k] || 0) > 0;   // 前の送信の返事を待たずに送る（差を送るので二重には足されない）
   BUSY[k] = (BUSY[k] || 0) + 1; PEND[k] = 0; INF[k] = r2((INF[k] || 0) + d); draw();
   var done = function(){ BUSY[k] = Math.max(0, (BUSY[k] || 0) - 1); INF[k] = r2((INF[k] || 0) - d); };
@@ -159,7 +158,7 @@ function flush(id, sp){
     done(); toast('通信が切れました。数を読み直します（' + m + '）', true); if (!BUSY[k]) load();
   });
 }
-function flushAll(){ Object.keys(PEND).forEach(function(k){ if (PEND[k]) { var p = k.split('|'); flush(p[0], p.slice(1).join('|')); } }); }
+function flushAll(){ clearTimeout(TIMER.all); Object.keys(PEND).forEach(function(k){ if (PEND[k]) { var p = k.split('|'); flush(p[0], p.slice(1).join('|')); } }); }
 // 数を押すと「今の数」を打ち直せる（初めて数えるとき・棚卸しのとき）。記録は差で残る
 function askTo(it, r){
   var k = key(it.id, r.spec);
