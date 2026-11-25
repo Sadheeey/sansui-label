@@ -60,6 +60,13 @@ h2{font-size:13px;color:var(--sub);margin:16px 0 8px;padding-left:16px;font-weig
 /* 状態の点（絵文字は使わない） */
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 8px 0 0;vertical-align:1px;background:var(--line)}
 .dot.ok{background:var(--ok)}.dot.warn{background:#b7791f}.dot.ng{background:var(--ng)}.dot.early{background:#fff;border:1px solid var(--sub)}
+.lr{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.lr .t{flex:1;font-size:17px;font-weight:600}
+.lr .t small{display:block;font-size:12px;font-weight:normal;color:var(--sub)}
+.lr button{min-width:56px;height:56px;border-radius:8px;border:1px solid var(--line);background:#faf8f5;font-size:24px;color:var(--ink)}
+.lr b{min-width:48px;text-align:center;font-size:22px}
+.lr b.ch{color:var(--main)}
+.card .pd{display:block;font-size:12px;color:var(--sub);padding-top:4px}
 #ptr{height:0;overflow:hidden;text-align:center;font-size:12px;color:var(--sub);line-height:40px;transition:height .2s}
 </style>
 </head>
@@ -125,12 +132,12 @@ function draw(){
     if (it.group !== g0) { g0 = it.group; h += '<h2>' + esc(g0) + '</h2>'; }
     // 生ベーコンは全規格の合計を見出しの横に出す（見るだけ・直すのは各規格の行で）
     var tot = it.book === 'meisai' && it.rows.length > 1 ? it.rows.reduce(function(a, r){ return r2(a + shownN(it, r)); }, 0) : null;
-    h += '<div class="card"><b>' + esc(it.name) + '</b>' + (tot !== null ? '<span class="tot">計 ' + fmt(tot) + esc(it.unit) + '</span>' : '') + (it.book === 'meisai' ? '<span class="bk">明細一覧表の在庫・古いカットから引く</span>' : '');
+    h += '<div class="card"><b>' + esc(it.name) + '</b>' + (tot !== null ? '<span class="tot">計 ' + fmt(tot) + esc(it.unit) + '</span>' : '') + (it.book === 'meisai' ? '<span class="bk">明細一覧表の在庫・期限を選んで直す</span>' + ((it.id === 'BACON' || it.id === 'BACON_KIRI') && D.pending && D.pending.length ? '<span class="pd">ラベル発行に決定待ちがあります（' + D.pending.map(function(x){ return esc(x.md) + ' ' + x.total + '枚'; }).join('・') + '）。決定すると在庫に入ります</span>' : '') : '');
     if (it.byDate && !it.rows.length) h += '<div class="hint" style="font-size:12px;color:var(--sub);padding:8px 0">いま塩漬け中のものはありません</div>';
     it.rows.forEach(function(r){
       var k = key(it.id, r.spec), p = PEND[k] || 0;
       var label = it.byDate ? esc(r.spec) + '<small>漬け　' + daysMark(r.days) + (r.days < 0 ? '日付を確かめて（減らせます）' : r.days ? '漬けて' + r.days + '日' : '今日漬けた') + '</small>' : (r.spec ? esc(r.spec) + '<small>g</small>' : '');
-      // 明細一覧表の品目は、カットの日ごとの残りを古い順に出す（−はいちばん左の日から引く）
+      // 明細一覧表の品目は、カットの日ごとの残りを古い順に出す（＋−は期限を選んで直す）
       var lots = r.lots ? shownLots(it, r) : [];
       if (lots.length) label += '<span class="lots">' + (lots.length > 1 ? '古い順 ' : '') + lots.map(function(L){ return esc(L.d) + '×' + fmt(L.n); }).join('・') + '</span>';
       h += '<div class="rw" data-id="' + esc(it.id) + '" data-sp="' + esc(r.spec) + '"><span class="sp">' + label + '</span>' +
@@ -147,6 +154,7 @@ $('list').addEventListener('click', function(e){
   if (b && b.dataset.add) { askAdd(item(b.dataset.add)); return; }
   var rw = e.target.closest('.rw'); if (!b || !rw) return;
   var it = item(rw.dataset.id), r = row(it, rw.dataset.sp), k = key(it.id, r.spec);
+  if (it.book === 'meisai') { askLot(it, r); return; }   // 1.13.0：生ベーコン・切り落としは期限を選んで直す
   if (b.dataset.to) { askTo(it, r); return; }
   var d = r2(Number(b.dataset.d) * stepOf(it));
   if (r2(shownN(it, r) + d) < 0) { toast('0より少なくはできません', true); return; }
@@ -214,6 +222,41 @@ function askAdd(it){
       if (!Object.keys(PEND).some(function(k){ return PEND[k]; }) && !Object.keys(BUSY).some(function(k){ return BUSY[k]; })) load();
     }, function(m){ toast('通信が切れました。数を読み直します（' + m + '）', true); load(); });
   };
+}
+// 1.13.0：生ベーコン・切り落とし：期限（カットの日）ごとに＋−して、まとめて直す（北村さん 11/26）
+var LOT = null;
+function askLot(it, r){
+  var k = key(it.id, r.spec);
+  if (BUSY[k]) { toast('送信が終わってから押してください', true); return; }
+  var picks = (r.picks || r.lots || []).map(function(x){ return { d: x.d, e: x.e || '', n: x.n, add: 0 }; });
+  if (!picks.length) { toast('直せるカットの日がありません（最近14日のカットも残りもありません）', true); return; }
+  LOT = { id: it.id, spec: r.spec, name: it.name + (r.spec ? ' ' + specText(it, r.spec) : ''), unit: it.unit, p: picks };
+  drawLot();
+}
+function drawLot(){
+  var h = '<h3>' + esc(LOT.name) + '：どの期限の分を直しますか</h3>';
+  LOT.p.forEach(function(x, i){
+    h += '<div class="lr"><div class="t">期限 ' + esc(x.e || '―') + '<small>' + esc(x.d) + 'カット・今 ' + fmt(x.n) + esc(LOT.unit) + '</small></div><button onclick="lotStep(' + i + ',-1)">−</button><b class="' + (x.add ? 'ch' : '') + '">' + (x.add > 0 ? '+' : '') + fmt(x.add) + '</b><button onclick="lotStep(' + i + ',1)">＋</button></div>';
+  });
+  var any = LOT.p.some(function(x){ return x.add; });
+  h += '<div class="acts"><button class="btn sub" onclick="closeSheet()">やめる</button><button class="btn main" id="goLot" onclick="lotGo()"' + (any ? '' : ' disabled') + '>直す</button></div>';
+  $('sheetIn').innerHTML = h; $('sheet').style.display = 'flex';
+}
+function lotStep(i, d){ var x = LOT.p[i]; if (x.n + x.add + d < 0) { toast('その期限の分は ' + fmt(x.n) + LOT.unit + 'です', true); return; } x.add += d; drawLot(); }
+// 選んだ期限ごとに1回ずつ送る。途中で失敗したら止めて読み直す（送れた分は在庫の記録に残る）
+function lotGo(){
+  var L = LOT, list = L.p.filter(function(x){ return x.add; }), k = key(L.id, L.spec), done = [];
+  if (!list.length) return;
+  closeSheet(); BUSY[k] = 1; draw();
+  var next = function(){
+    var x = list.shift();
+    if (!x) { BUSY[k] = 0; toast(L.name + '：' + done.join('・') + ' を直しました'); load(); return; }
+    call({ action: 'zk_add', id: L.id, spec: L.spec, delta: x.add, lot: x.d }, function(res){
+      if (res && res.ok) { done.push('期限' + (x.e || x.d) + ' ' + (x.add > 0 ? '+' : '') + fmt(x.add)); next(); }
+      else { BUSY[k] = 0; toast('直せませんでした：' + ((res && res.error) || '') + (done.length ? '（' + done.join('・') + ' は直しました）' : ''), true); load(); }
+    }, function(m){ BUSY[k] = 0; toast('通信が切れました。数を読み直します（' + m + '）', true); load(); });
+  };
+  next();
 }
 function closeSheet(){ $('sheet').style.display = 'none'; }
 $('sheet').addEventListener('click', function(e){ if (e.target === this) closeSheet(); });

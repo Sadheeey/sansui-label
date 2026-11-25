@@ -85,9 +85,14 @@ footer .btn small{font-size:13px;font-weight:normal;margin-left:4px}
 footer .meta{flex-basis:100%;display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:0 16px;white-space:nowrap;font-size:12px;color:var(--sub)}
 footer .meta a{color:var(--sub)}
 #dev{font-size:12px;color:var(--sub);white-space:nowrap}
-#ns{display:none;font-size:12px;color:var(--sub);white-space:nowrap}
-#ns input{vertical-align:-2px;margin:0 4px 0 0}
-#ns.on{color:var(--ng)}
+#pd{display:none;border:none;background:none;padding:8px 0;font-size:12px;color:var(--sub);text-decoration:underline;white-space:nowrap}
+.dr{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.dr .t{flex:1;font-size:17px;font-weight:600}
+.dr .t small{display:block;font-size:12px;font-weight:normal;color:var(--sub)}
+.dr button{min-width:56px;height:56px;border-radius:8px;border:1px solid var(--line);background:#faf8f5;font-size:24px;color:var(--ink)}
+.dr b{min-width:56px;text-align:center;font-size:24px}
+.dr b.ch{color:var(--main)}
+.dsum{padding:16px 0 0;font-size:14px;color:var(--sub)}
 #bar .un{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px;font-size:12px;color:var(--sub)}
 #bar .un.ask{border-color:var(--ng);color:var(--ng)}
 .btn{border:none;border-radius:8px;padding:8px 16px;min-height:48px;font-size:16px;font-weight:600}
@@ -127,7 +132,7 @@ footer .meta a{color:var(--sub)}
 <main id="list"><div id="load">読み込み中…</div></main>
 <div id="bar"><div class="hd" id="barHd"></div><div class="ls" id="barLs"></div></div>
 <footer>
-  <div class="meta" id="meta"><label id="ns"><input type="checkbox" id="noStock">在庫に入れない</label></div>
+  <div class="meta" id="meta" style="display:none"><button id="pd" onclick="openDecide()"></button></div>
   <button class="btn sub" id="bStep" disabled>1種類ずつ</button>
   <button class="btn main" id="bAll" disabled>まとめて印刷</button>
 </footer>
@@ -148,7 +153,7 @@ function clampN(v){ v = parseInt(han(v), 10); if (!isFinite(v) || v < 0) v = 0; 
 function store(k, v){ try { if (v === undefined) return localStorage.getItem('label:' + k); localStorage.setItem('label:' + k, v); } catch (e) { return null; } }
 
 // 受付を呼ぶ：Apps Script の中で開いたときは google.script.run、別ページのときは fetch
-var FN = { ui_data: 'uiData', ui_enqueue: 'uiEnqueue', ui_status: 'uiStatus', ui_cancel: 'uiCancel', ui_unstock: 'uiUnstock' };
+var FN = { ui_data: 'uiData', ui_enqueue: 'uiEnqueue', ui_status: 'uiStatus', ui_cancel: 'uiCancel', ui_unstock: 'uiUnstock', ui_pending: 'uiPending', ui_decide: 'uiDecide' };
 function call(action, args, ok, ng){
   var fail = function(e){ (ng || showErr)(String(e && e.message || e)); };
   if (!(window.google && google.script && google.script.run) && EXEC.indexOf('__') === 0) { fail('受付の住所が入っていません（公開の手順を確かめてください）'); return; }
@@ -161,6 +166,7 @@ function call(action, args, ok, ng){
   if (action === 'ui_enqueue') { body.items = args[0]; body.source = args[1]; }
   if (action === 'ui_status') body.ids = args[0];
   if (action === 'ui_cancel' || action === 'ui_unstock') body.id = args[0];
+  if (action === 'ui_decide') { body.date = args[0]; body.ids = args[1]; body.counts = args[2]; }
   fetch(EXEC, { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'text/plain;charset=utf-8' } })
     .then(function(res){ if (!res.ok) throw new Error('受付につながりません（' + res.status + '）'); return res.json().catch(function(){ throw new Error('受付の返事が読めません。少しして、もう一度押してください'); }); })
     .then(ok).catch(fail);
@@ -197,9 +203,7 @@ function load(){
   if (window.google && google.script && google.script.run) { var zl = $('zkLink'); if (zl) zl.style.display = 'none'; }
   call('ui_data', [], function(d){
     if (!d || !d.ok) { $('list').innerHTML = '<div class="msg ng">読み込めませんでした：' + esc(d && d.error) + '</div>'; return; }
-    D = d; drawDev(d.device); applyDrafts(); keepQ(); drawNav(); draw(); sum();
-    $('ns').style.display = d.labels.some(function(l){ return l.stock; }) ? 'inline-block' : 'none';
-    $('meta').style.display = $('ns').style.display === 'none' ? 'none' : ''; // 在庫に入れない品が無いときは行ごと出さない
+    D = d; drawDev(d.device); applyDrafts(); keepQ(); drawNav(); draw(); sum(); drawPend(d.pending);
   }, function(m){ $('list').innerHTML = '<div class="msg ng">読み込めませんでした：' + esc(m) + '</div>'; });
 }
 // #24：Claudeが書いておいた本数（今日の分）を、入力が空のときだけ入れておく
@@ -471,13 +475,11 @@ function sum(){
 
 /* ---------- 印刷（#16：確認画面なし。押したらすぐ並べる） ---------- */
 $('bAll').onclick = function(){ run('all'); };
-$('noStock').onchange = function(){ $('ns').classList.toggle('on', this.checked); };
 $('bStep').onclick = function(){ run('step'); };
 function run(mode, ok){
   var c = collect();
   if (c.bad.length) { showErr(c.bad.join('\n')); return; }
   if (!c.items.length) return;
-  var ns = $('noStock').checked && $('ns').style.display !== 'none';
   if (DRAFT_ASK && !ok) {
     var n = c.items.reduce(function(a, x){ return a + x.copies; }, 0);
     var h = '<h3>入っていた本数で印刷します（合計 ' + n + ' 枚）</h3>';
@@ -486,17 +488,16 @@ function run(mode, ok){
     openSheet(h); return;
   }
   DRAFT_ASK = false;
-  // 前の印刷で済んだ分は、ここで帯から下ろす（それまでは「在庫から外す」を押せる）
+  // 前の印刷で済んだ分は、ここで帯から下ろす（決定待ちの分は、画面の下の「決定待ち」から決定できる）
   QUEUE = QUEUE.filter(function(x){ return !(isEnd(x.st) && (!part(x) || x.rp)) && !x.gone; });
   LAST_HD = LAST_LS = '';
   // 印刷中・順番待ちがあるときに足した分は、割り込ませず列の最後に並べ、「次を印刷」で出す（束が混ざって貼り間違えないように・北村さん 11/25）
   var wait = QUEUE.some(function(x){ return !x.gone && (x.held || x.retry || x.sending || !x.id || !isEnd(x.st) || (part(x) && !x.rp)); }); // 途中で止まり、残りをまだ選んでいない束も「進行中」
   var bt = ++BATCH;
   c.items.forEach(function(x, i){
-    var st = ns && (lab(x.label) || {}).stock;
-    QUEUE.push({ title: x.title, spec: x.spec + (st ? '・在庫に入れない' : ''), copies: x.copies, payload: { label: x.label, values: x.values, copies: x.copies, noStock: !!st }, held: wait || (mode === 'step' && i > 0), batch: mode === 'step' ? bt + ':' + i : String(bt), id: null, st: '', note: '' });
+    QUEUE.push({ title: x.title, spec: x.spec, copies: x.copies, payload: { label: x.label, values: x.values, copies: x.copies }, held: wait || (mode === 'step' && i > 0), batch: mode === 'step' ? bt + ':' + i : String(bt), id: null, st: '', note: '' });
   });
-  Q = {}; DRAFT_NOTE = ''; $('noStock').checked = false; $('ns').classList.remove('on'); draw(); sum(); // 印刷中でも、すぐ次を入れられる
+  Q = {}; DRAFT_NOTE = ''; draw(); sum(); // 印刷中でも、すぐ次を入れられる
   sendPending();
 }
 
@@ -558,6 +559,7 @@ function drawBar(){
   var parts = q.filter(function(x){ return part(x) && !x.rp; });
   var paused = q.filter(function(x){ return x.st === '印刷中' && /^⏸/.test(x.note || ''); });
   if (!paused.length) PAUSE_SHOWN = false;
+  var pendQ = q.some(function(x){ return x.st === '済み' && String(x.note || '').indexOf('［決定待ち］') >= 0; });   // 1.13.0：決定待ちがあれば「終了」を出す
   var tx, acts = '';
   if (retry.length) {
     tx = ic('warn') + '送れていない分が ' + retry.length + '件 あります';
@@ -567,7 +569,8 @@ function drawBar(){
       : parts.length ? ic('warn') + '途中で止まった分があります（' + sheets + '枚 刷れました）'
       : ic('ok') + '全部おわりました（' + done + '/' + q.length + '件・' + sheets + '枚）';
     if (bad.length || parts.length) BAR_OPEN = true;
-    acts = '<button class="btn sub nx" onclick="clearBar()">閉じる</button>';
+    acts = pendQ ? '<button class="btn main nx" onclick="openDecide()">終了</button>' : '<button class="btn sub nx" onclick="clearBar()">閉じる</button>';
+    if (pendQ && !parts.length) tx += '<small>刷った数を確かめて「決定」すると在庫に入ります</small>';
   } else if (paused.length) {
     tx = ic('pause') + 'プリンターが止まっています<small style="color:var(--ng)">ラベル切れかもしれません。ロールを替えると、続きから刷ります</small>';
     if (!PAUSE_SHOWN) { PAUSE_SHOWN = true; BAR_OPEN = true; }
@@ -580,7 +583,7 @@ function drawBar(){
   if (busy && $('dev').dataset.bad) tx += '<small style="color:var(--ng)">店のPCとつながっていないようです。PCが動くまで印刷されません</small>';
   if (BAR_ERR) tx += '<small style="color:var(--ng)">' + esc(BAR_ERR) + '</small>';
   var stocked = q.some(function(x){ var n = String(x.note || ''); return x.st === '済み' && n.indexOf('［在庫+］') >= 0 && n.indexOf('［在庫−］') < 0; });
-  autoClose(!busy && !held.length && !retry.length && !bad.length && !parts.length && !nostock.length && !BAR_ERR && !stocked);
+  autoClose(!busy && !held.length && !retry.length && !bad.length && !parts.length && !nostock.length && !BAR_ERR && !stocked && !pendQ);
   var hd = '<div class="tx">' + tx + '</div>' + acts + '<button class="tg" onclick="toggleBar()">' + (BAR_OPEN ? '一覧をたたむ' : '一覧を見る') + '</button>';
   if (hd !== LAST_HD) { $('barHd').innerHTML = hd; LAST_HD = hd; } // 中身が同じなら作り直さない（押している最中に消えないように）
   bar.classList.toggle('open', BAR_OPEN);
@@ -589,7 +592,7 @@ function drawBar(){
     var s = x.retry ? ic('warn') + '送り直し待ち' : x.held ? ic('pause') + '次を待つ' : x.sending ? '送信中' : x.cancelling ? '取消中' : (Object.prototype.hasOwnProperty.call(MARK, x.st) ? MARK[x.st] : esc(x.st || '…'));
     var canX = !x.cancelling && (x.held || x.retry || x.st === '待ち');
     var inS = x.st === '済み' && String(x.note || '').indexOf('［在庫+］') >= 0, outS = String(x.note || '').indexOf('［在庫−］') >= 0;
-    var tag = outS ? '・在庫から外した' : inS ? '・在庫に入れた' : '';
+    var nt = String(x.note || ''), tag = outS ? '・在庫から外した' : inS || nt.indexOf('［決定済み］') >= 0 ? '・在庫に入れた' : x.st === '済み' && nt.indexOf('［決定待ち］') >= 0 ? '・決定待ち' : '';
     var un = inS && !outS && !x.unstocking ? '<button class="un' + (x.askUn ? ' ask' : '') + '" onclick="unstockOne(' + QUEUE.indexOf(x) + ')">' + (x.askUn ? 'もう一度押すと外す' : '在庫から外す') + '</button>' : '';
     var pt = part(x), k = QUEUE.indexOf(x), sub = '';
     if (x.st === '印刷中' && x.note) sub = ' ' + cleanNote(x.note);
@@ -615,11 +618,11 @@ function part(x){
   var m = String(x.note || '').match(/［途中 (\d+)\/(\d+)枚］/);
   return m ? { n: Number(m[1]), of: Number(m[2]), unsure: String(x.note).indexOf('［1枚不明］') >= 0 } : null;
 }
-// 残りを刷る（n=0 は刷らない）。在庫に入れない設定は元の依頼のまま
+// 残りを刷る（n=0 は刷らない）
 function reprint(k, n){
   var x = QUEUE[k]; if (!x || x.rp) return;
   x.rp = n > 0 ? '残り' + n + '枚を並べた' : '刷らない';
-  if (n > 0) QUEUE.splice(k + 1, 0, { title: x.title, spec: x.spec + '・残り', copies: n, payload: { label: x.payload.label, values: x.payload.values, copies: n, noStock: x.payload.noStock }, held: false, id: null, st: '', note: '' });
+  if (n > 0) QUEUE.splice(k + 1, 0, { title: x.title, spec: x.spec + '・残り', copies: n, payload: { label: x.payload.label, values: x.payload.values, copies: n }, held: false, id: null, st: '', note: '' });
   LAST_HD = LAST_LS = ''; sendPending(); drawBar();
 }
 // 全部うまく済んだら、10秒で帯を自動で閉じる（一覧を開いているとき・途中で止まった分があるときは閉じない）
@@ -656,6 +659,74 @@ function unstockOne(k){
   }, function(m){ x.unstocking = false; BAR_ERR = m; drawBar(); });
 }
 function clearBar(){ clearTimeout(timer); QUEUE = []; BAR_OPEN = false; BAR_ERR = ''; LAST_HD = LAST_LS = ''; drawBar(); load(); }
+/* ---------- 1.13.0：終了 → 刷った数を確かめて「決定」で在庫へ（決定しなかった分は「決定待ち」に置いておく） ---------- */
+var DEC = null, DEC_ASK = 0, DEC_BUSY = false;
+var DNAME = ['160g', '180g', '200g', '220g', '240g', '切り落とし'];
+// 画面の下の小さな印（ほかの人の邪魔にならないよう、決定待ちがあるときだけ出す）
+function drawPend(p){
+  p = Array.isArray(p) ? p : [];
+  $('pd').style.display = p.length ? 'inline-block' : 'none'; $('meta').style.display = p.length ? '' : 'none';
+  $('pd').textContent = '決定待ち：' + p.map(function(x){ return x.md + ' ' + x.total + '枚'; }).join('・');
+}
+function openDecide(){
+  openSheet('<h3>刷った数を読み込み中…</h3>');
+  call('ui_pending', [], function(r){
+    if (!r || !r.ok) { showErr((r && r.error) || '読めませんでした'); return; }
+    drawPend(r.groups.map(function(g){ return { md: g.md, total: g.counts.reduce(function(a, x){ return a + x; }, 0) }; }));
+    if (!r.groups.length) { openSheet('<h3>決定待ちはありません</h3><div class="acts"><button class="btn sub" onclick="closeSheet();endBar()">閉じる</button></div>'); return; }
+    if (r.groups.length === 1) { decideSheet(r.groups[0]); return; }
+    var h = '<h3>どの日に刷った分を決定しますか</h3>';
+    r.groups.forEach(function(g, i){ h += '<div class="row"><div class="t">' + esc(g.md) + 'に刷った分<small>' + g.counts.reduce(function(a, x){ return a + x; }, 0) + '枚</small></div><button class="x" onclick="decideSheet(PG[' + i + '])">開く</button></div>'; });
+    PG = r.groups;
+    openSheet(h + '<div class="acts"><button class="btn sub" onclick="closeSheet();endBar()">あとで</button></div>');
+  }, showErr);
+}
+var PG = [];
+function decideSheet(g, note){ DEC = { g: g, c: g.counts.slice(), note: note || '' }; DEC_ASK = 0; drawDecide(); }
+function drawDecide(){
+  var g = DEC.g, h = '<h3>' + esc(g.md) + 'に刷った数（貼り損じは−で引く）</h3>' + (DEC.note ? '<div class="msg warn">' + esc(DEC.note) + '</div>' : '');
+  DNAME.forEach(function(nm, j){
+    if (!g.counts[j] && !DEC.c[j]) return;
+    h += '<div class="dr"><div class="t">' + nm + '<small>刷った ' + g.counts[j] + '枚</small></div><button onclick="decStep(' + j + ',-1)">−</button><b class="' + (DEC.c[j] !== g.counts[j] ? 'ch' : '') + '">' + DEC.c[j] + '</b><button onclick="decStep(' + j + ',1)">＋</button></div>';
+  });
+  var tot = DEC.c.reduce(function(a, x){ return a + x; }, 0);
+  h += '<div class="dsum">在庫に入れる数：計 ' + tot + '枚（カットの日は ' + esc(g.md) + '）。決定したら、あとは在庫カウンターで直します</div>';
+  h += '<div class="acts"><button class="btn sub" onclick="closeSheet();endBar()">あとで</button><button class="btn main" id="decGo" onclick="decGo()"' + (DEC_BUSY ? ' disabled' : '') + '>' + (DEC_BUSY ? '送信中…' : DEC_ASK ? 'もう一度押すと決定' : '決定') + '</button></div>';
+  openSheet(h);
+}
+function decStep(j, d){ if (DEC_BUSY) return; DEC.c[j] = Math.max(0, Math.min(999, DEC.c[j] + d)); DEC_ASK = 0; drawDecide(); }
+// 決定したら変えられないので2回押す
+function decGo(){
+  if (DEC_BUSY) return;
+  if (DEC_ASK && Date.now() - DEC_ASK < 300) return;   // すばやい2回たたきでは決めない
+  if (!DEC_ASK || Date.now() - DEC_ASK > 3000) { DEC_ASK = Date.now(); drawDecide(); setTimeout(function(){ if (DEC_ASK && Date.now() - DEC_ASK >= 3000 && !DEC_BUSY) { DEC_ASK = 0; if ($('decGo')) drawDecide(); } }, 3100); return; }
+  DEC_ASK = 0; DEC_BUSY = true; drawDecide();
+  var g = DEC.g;
+  call('ui_decide', [g.date, g.ids, DEC.c], function(r){
+    DEC_BUSY = false;
+    if (r && /開き直して/.test(r.error || '')) { reopenDecide(g); return; }
+    if (!r || !r.ok) { showErr((r && r.error) || '決定できませんでした'); return; }
+    QUEUE.forEach(function(x){ if (g.ids.indexOf(x.id) >= 0) x.note = String(x.note || '').replace('［決定待ち］', '［決定済み］'); });
+    LAST_HD = LAST_LS = ''; drawBar();
+    openSheet('<h3>在庫に入れました</h3><div class="msg ok">' + esc(r.md) + 'カット ' + r.total + '枚' + (r.total !== r.printed ? '（刷った ' + r.printed + '枚）' : '') + '</div>' + (r.kai === false ? '<div class="msg warn">回づくりに知らせられませんでした。ベーコン在庫タブの 🧮 で組み直してください</div>' : '') + '<div class="acts"><button class="btn sub" onclick="closeSheet();endBar()">閉じる</button></div>');
+    call('ui_pending', [], function(p){ if (p && p.ok) drawPend(p.groups.map(function(x){ return { md: x.md, total: x.counts.reduce(function(a, y){ return a + y; }, 0) }; })); }, function(){});
+  }, function(m){ DEC_BUSY = false; showErr(m + '（届いたか分からないので、開き直して確かめてください）'); });
+}
+// 開いた後に刷り終わった分が増えたとき：読み直して、直した分（−や＋）はそのまま残し、増えた枚数だけ足して開き直す
+function reopenDecide(g0){
+  var old = DEC;
+  call('ui_pending', [], function(r){
+    var g = r && r.ok && r.groups.filter(function(x){ return x.date === g0.date; })[0];
+    if (!g) { showErr('この日の決定待ちはもうありません（ほかの人が決定したかもしれません）'); return; }
+    var c = g.counts.map(function(n, j){ return Math.max(0, n + (old.c[j] - old.g.counts[j])); });
+    var more = g.counts.map(function(n, j){ return n - old.g.counts[j]; }), msg = [];
+    more.forEach(function(d, j){ if (d) msg.push(DNAME[j] + (d > 0 ? ' +' : ' ') + d); });
+    DEC = { g: g, c: c, note: '刷り終わった分を足しました（' + (msg.join('・') || '増えた分なし') + '）。数を確かめてから決定してください' };
+    DEC_ASK = 0; drawDecide();
+  }, showErr);
+}
+// 印刷が全部おわっていれば、帯も下ろす（決定待ちの分は下の小さな印から開ける）
+function endBar(){ if (live().every(function(x){ return isEnd(x.st) && (!part(x) || x.rp) || x.gone; }) && !SENDING) { clearTimeout(timer); QUEUE = []; BAR_OPEN = false; BAR_ERR = ''; LAST_HD = LAST_LS = ''; drawBar(); } }
 function openSheet(h){ $('sheetIn').innerHTML = h; $('sheet').style.display = 'flex'; }
 function closeSheet(){ $('sheet').style.display = 'none'; }
 
