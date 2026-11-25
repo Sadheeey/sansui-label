@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ベーコンカット</title>
+<!-- 【山水】ベーコンカット（⑩ 11/25）。元はベーコンカットのチャットで作った Claude の中の画面（https://claude.ai/artifact/81QvW8jQuiSbRRUAF9GXik ）。
+     sansui-label に bacon.html として置く。繰り越しは受付（ラベル発行の Apps Script）の zk_data から読む。
+     受付の住所が入っていない（Claude の中で開いた）ときだけ、これまでどおり明細一覧表「ベーコン在庫」を直接読む。
+     カットの計算・ボタン・画面は元のまま。変えたのは繰り越しの読み先だけ -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* VOICE: 現場の道具。手袋のまま、指の関節で押せる大きさ
+   IDEA: 厨房の秤の表示窓と、大きな押しボタン
+   PICTURE: いま切る塊の「次の切り方」と、画面下半分の大きな数字パッド
+   COLOUR and TYPE: 白地と黒、差し色は燻製の赤1色。Noto Sans JP、強弱は濃淡で
+   LAYOUT: 1画面で完結。準備→切る→まとめの3画面を切り替え、スクロールさせない */
+:root{color-scheme:light dark;--bg:light-dark(#ffffff,#121212);--ink:light-dark(#151515,#f2f2f2);--sub:light-dark(#5c5c5c,#a8a8a8);--line:light-dark(#e0e0e0,#2c2c2c);--soft:light-dark(#f2f2f2,#1e1e1e);--ac:light-dark(#b42318,#ff6b5e);--ok:#2e7d32;--y:#c79a00;--o:#e46a00;--r:#c62828}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+[hidden]{display:none!important}
+html,body{height:100%;overflow:hidden}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Noto Sans JP",system-ui,sans-serif}
+.view{height:100dvh;max-width:640px;margin:0 auto;padding:12px 16px 16px;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+button{font:inherit;font-size:16px;min-height:48px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+button:disabled{opacity:.4}
+button:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+button.pri{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:700}
+button.s{min-height:40px;font-size:14px;padding:0 12px;color:var(--sub)}
+.lab{font-size:13px;color:var(--sub)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.top h1{font-size:16px;font-weight:500;margin:0;color:var(--sub)}
+#clock{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.tm{display:flex;align-items:center;gap:8px}
+.cr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px}
+.st{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:8px}
+.st span{font-size:15px;color:var(--sub)}
+.st div{display:grid;grid-template-columns:48px minmax(32px,1fr) 48px;gap:4px;align-items:center}
+.st button{min-height:48px;padding:0;font-size:20px}
+.st b{text-align:center;font-size:24px;font-variant-numeric:tabular-nums}
+.cline{font-size:18px;font-weight:500;padding:8px 16px;border-radius:8px;background:var(--soft)}
+.cline.ng{color:var(--ac)}
+.chips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
+.chip{min-height:40px;padding:0 4px;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+.big{min-height:64px;font-size:20px}
+.cnt{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
+.cell{padding:4px 8px;border-radius:8px;background:var(--soft)}
+.cell b{display:block;font-size:20px;line-height:1.1;font-variant-numeric:tabular-nums}
+.cell span{font-size:12px;color:var(--sub)}
+.bals{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:14px}
+.bal{display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.pick{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
+.pick button{min-height:40px;padding:0 4px;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.pick button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.pick button.mid{border-color:var(--ac);color:var(--ac)}
+.pick button.on.mid{color:var(--bg)}
+#ins{font-size:clamp(24px,6.5vw,34px);line-height:1.2;font-weight:700;text-wrap:balance}
+#sub{font-size:16px;color:var(--sub)}
+#flash{min-height:24px;font-size:16px;font-weight:500}
+#flash.warn{color:var(--ac)}
+.disp{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 16px;border-radius:8px;background:var(--soft);min-height:56px}
+.disp b{font-size:40px;line-height:1;font-weight:700;font-variant-numeric:tabular-nums}
+.disp span{font-size:14px;color:var(--sub)}
+.disp.rm{outline:2px solid var(--ac)}
+.kp{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:minmax(40px,1fr);gap:8px}
+.kp button{font-size:30px;font-weight:700;min-height:0;height:100%;border-radius:12px;background:var(--soft);border-color:var(--soft)}
+.kp button:active{background:var(--line)}
+.kp button.del{font-size:17px;font-weight:500;color:var(--sub)}
+.kp button.ok{font-size:20px;background:var(--ac);border-color:var(--ac);color:#fff}
+.tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;flex:none}
+.tools button{min-height:40px;font-size:15px;color:var(--sub)}
+.hist{font-size:14px;color:var(--sub);min-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.view>*{flex:none}.view>.kp{flex:1 1 auto}
+#sum{width:100%;flex:1;min-height:0;font:16px/1.7 "Noto Sans JP",sans-serif;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--soft);color:var(--ink);resize:none}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+.grow{flex:1}
+.note{font-size:12px;color:var(--sub)}
+@media(max-height:680px){#ins{font-size:22px}.cell b{font-size:17px}.disp b{font-size:32px}.disp{min-height:48px}}
+</style>
+</head>
+<body>
+
+<div class="view" id="vSetup">
+  <div class="top"><h1>ベーコンカット・準備</h1><button class="s" id="reset1">やり直す</button></div>
+  <div class="lab">繰り越し（在庫カウンターの生ベーコンから自動で読み込み）</div>
+  <div class="cline" id="cline">在庫を読み込み中…</div>
+  <div class="cr" id="carry" hidden></div>
+  <div class="lab" id="bcount"></div>
+  <div class="chips" id="chips"></div>
+  <div class="disp"><span>塊の重さ</span><b id="bbuf"></b></div>
+  <div class="kp" data-kp="b"></div>
+  <button class="pri big" id="go">切り始める</button>
+</div>
+
+<div class="view" id="vCut" hidden>
+  <div class="top"><div class="tm"><span id="clock">0:00</span><button class="s" id="tbtn">中断</button><span class="lab" id="left"></span></div><button class="s" id="finb">終わる</button></div>
+  <div class="cnt" id="cnt"></div>
+  <div class="bals" id="bals"></div>
+  <div class="pick" id="pick"></div>
+  <div class="lab" id="clab"></div>
+  <div id="ins"></div>
+  <div id="sub"></div>
+  <div id="flash"></div>
+  <div class="hist" id="hist"></div>
+  <div class="tools"><button id="undo">1つ戻す</button><button id="rmb">残りを量る</button></div>
+  <div class="disp" id="pdisp"><span id="plab">切った1本の重さ</span><b id="pbuf"></b></div>
+  <div class="kp" data-kp="p" id="pkp"></div>
+</div>
+
+<div class="view" id="vDone" hidden>
+  <div class="top"><h1>まとめ</h1><button class="s" id="back">切る画面に戻る</button></div>
+  <textarea id="sum" readonly></textarea>
+  <div class="row"><button class="grow big" id="copy">コピー</button><button class="grow big" id="reset">新しいカットを始める</button></div>
+  <div class="note">重さは3けた（塊は1000g以上なら4けた）押すと自動で決定。100g未満のときだけ「決定」。<br>規格：160＝157〜176／180＝177〜195／200＝196〜214（215は約10g削って200）／220＝216〜235／240＝236〜255（256以上は削って240）／157未満は規格外。</div>
+</div>
+
+<script>
+{
+const G=[160,180,200,220,240];
+const PL={160:[157,176],180:[177,195],200:[196,214],220:[216,235],240:[236,250]};
+const cen=g=>(PL[g][0]+PL[g][1])/2;
+const KEY='sansui-bacon-cut-v3';
+const $=id=>document.getElementById(id);
+let S=load()||fresh({160:0,180:2,220:0,240:0});
+let hist=[];
+let msg={t:'',w:false};
+let buf='',mode='p',loading=false,lastInv='';
+
+function fresh(carry){return{view:'setup',carry,blocks:[],cur:null,t0:null,pz:0,pAt:null,tEnd:null,date:new Date().toISOString()}}
+function load(){try{const v=localStorage.getItem(KEY);return v?JSON.parse(v):null}catch(e){return null}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function snap(){hist.push(JSON.stringify(S));if(hist.length>60)hist.shift()}
+
+function cls(w){
+  if(w<157)return{g:0,trim:0};
+  if(w<=176)return{g:160,trim:0};
+  if(w<=195)return{g:180,trim:0};
+  if(w<=214)return{g:200,trim:0};
+  if(w===215)return{g:200,trim:10};
+  if(w<=235)return{g:220,trim:0};
+  if(w<=255)return{g:240,trim:0};
+  return{g:240,trim:w-245};
+}
+function dl(list){let a=0,b=0;for(const g of list){if(g==160)a++;if(g==240)a--;if(g==180)b++;if(g==220)b--}return[a,b]}
+const pen=x=>{x=Math.abs(x);return x==0?0:x==1?6:25*x};
+const oc=new Map();
+function opts(w){
+  if(oc.has(w))return oc.get(w);
+  const res=[];
+  for(const m of G)for(let n=1;n<=7;n++){
+    const lo=n*PL[m][0],hi=n*PL[m][1];
+    if(w>=lo&&w<=hi){const sl=Math.min(w-lo,hi-w)/n;if(n==1||sl>=1.5)res.push({list:Array(n).fill(m),odd:null,sl})}
+  }
+  for(const o of G)for(const m of G){if(o==m)continue;for(let k=1;k<=6;k++){
+    const lo=PL[o][0]+k*PL[m][0],hi=PL[o][1]+k*PL[m][1];
+    if(w>=lo&&w<=hi){const sl=Math.min(w-lo,hi-w)/(k+1);if(sl>=1.5)res.push({list:[o,...Array(k).fill(m)],odd:o,sl})}
+  }}
+  if(!res.length){
+    if(w<157)res.push({list:[0],odd:null,sl:0,fb:true,trim:0});
+    else{let best=null;for(const m of G){const n=Math.max(1,Math.floor(w/PL[m][0]));const t=w-n*PL[m][1];if(t<0)continue;const c=t-(m==200?n:0)*.1;if(!best||c<best.c)best={c,o:{list:Array(n).fill(m),odd:null,sl:0,fb:true,trim:Math.round(t)}}}
+      if(best)res.push(best.o)}
+  }
+  for(const o of res){const n2=o.list.filter(g=>g==200).length;const ne=o.list.filter(g=>g==160||g==240).length;o.sc=n2*10-ne*6+Math.min(o.sl,8)*.6-(o.odd?.5:0)-(o.list.length>=5?.3:0)-(o.fb?50:0)}
+  oc.set(w,res);return res;
+}
+function counts(){const c={0:0,160:0,180:0,200:0,220:0,240:0};let trim=0;const outs=[];
+  for(const b of S.blocks)for(const p of b.pieces){c[p.g]++;trim+=p.trim||0;if(!p.g)outs.push(p.w)}
+  return{c,trim,outs}}
+function base(){const{c}=counts();return[S.carry[160]-S.carry[240]+c[160]-c[240],S.carry[180]-S.carry[220]+c[180]-c[220]]}
+
+function recompute(){
+  let[a,b]=base();const vars=[];
+  S.blocks.forEach((B,i)=>{if(B.done)return;
+    if(B.pieces.length&&!B.replan&&B.plan){const[x,y]=dl(B.plan.list);a+=x;b+=y}
+    else vars.push(i)});
+  let st=new Map([[a+','+b,{s:0,p:[]}]]);
+  for(const i of vars){const B=S.blocks[i];const w=B.pieces.length?B.r:B.w;const ns=new Map();
+    for(const[k,v]of st){const[x,y]=k.split(',').map(Number);
+      for(const o of opts(w)){const[dx,dy]=dl(o.list);const nk=(x+dx)+','+(y+dy);const s=v.s+o.sc;
+        if(!ns.has(nk)||ns.get(nk).s<s)ns.set(nk,{s,p:[...v.p,o]})}}
+    st=ns}
+  let best=null;
+  for(const[k,v]of st){const[x,y]=k.split(',').map(Number);const s=v.s-pen(x)-pen(y);if(!best||s>best.s)best={s,p:v.p}}
+  vars.forEach((i,j)=>{const B=S.blocks[i];const o=best.p[j];B.plan={list:[...o.list],odd:o.odd,fb:!!o.fb,trim:o.trim||0};B.replan=false});
+}
+
+function shape(m){return['','そのまま','2等分','3等分','2等分→さらに2等分','1本取ってから→2等分→2等分','2等分→それぞれ3等分','1本取ってから→6本'][m]||m+'本'}
+function desc(list){if(!list.length)return'';if(list.includes(0))return'規格外';const t={};for(const g of list)t[g]=(t[g]||0)+1;
+  const ks=Object.keys(t).sort((x,y)=>t[x]-t[y]);return ks.map(k=>t[k]>1?k+'×'+t[k]:k).join('＋')}
+function instr(B){
+  const L=B.plan.list,r=B.r,k=L.length;
+  if(!k)return['完了',''];
+  if(L.includes(0))return['規格外（切り落とし・店頭へ）','量って決定を押してください'];
+  const t={};for(const g of L)t[g]=(t[g]||0)+1;const ks=Object.keys(t).map(Number);
+  let ins,sub;
+  if(k==1){ins='そのまま '+L[0];sub='切らずに量って入れる'}
+  else if(ks.length==1){ins=shape(k)+' → '+L[0]+'×'+k;sub='1本 約'+Math.round(r/k)+'g'}
+  else if(ks.length==2&&(t[ks[0]]==1||t[ks[1]]==1)){
+    const odd=t[ks[0]]==1&&!(t[ks[1]]==1&&B.plan.odd==ks[1])?ks[0]:ks[1];const main=ks[0]==odd?ks[1]:ks[0];const m=t[main];
+    const tt=Math.round(Math.min(Math.max(r-m*cen(main),PL[odd][0]+3),PL[odd][1]-3));
+    const tmax=Math.min(PL[odd][1],r-m*PL[main][0]),tmin=Math.max(PL[odd][0],r-m*PL[main][1]);
+    const up=tmax>=PL[odd][1]-1,dn=tmin<=PL[odd][0]+1;
+    const hint=up&&dn?'':up?'（↑大きめ）':dn?'（↓小さめ）':'（→ちょうど）';
+    ins='先に'+odd+'を1本'+hint+' → 残りを'+(m==1?'':shape(m)+'で ')+main+(m>1?'×'+m:'');
+    sub='目安 約'+tt+'g';
+  } else {ins='残り '+desc(L);sub='次の1本 約'+Math.round(r/k)+'g'}
+  if(B.plan.fb&&B.plan.trim)sub+='（ぴったりなし：約'+B.plan.trim+'g削り）';
+  return[ins,sub];
+}
+function balTxt(a,lo,hi){return a>0?lo+'が'+a+'本多い':a<0?hi+'が'+(-a)+'本多い':lo+'と'+hi+'は同数'}
+function dotc(a){a=Math.abs(a);return a==0?'var(--ok)':a==1?'var(--y)':a<4?'var(--o)':'var(--r)'}
+function elapsed(){if(!S.t0)return 0;const end=S.tEnd||S.pAt||Date.now();return Math.max(0,end-S.t0-S.pz)}
+function fmt(ms){const s=Math.floor(ms/1000);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+function fits(L,r){let lo=0,hi=0;for(const g of L){if(!g)return r<157;lo+=PL[g][0];hi+=g==240?255:PL[g][1]}return r>=lo-2&&r<=hi+2}
+function nextBlock(){const i=S.blocks.findIndex(B=>!B.done);return i<0?null:i}
+
+function showBuf(){const t=buf||' ';$('bbuf').textContent=t;$('pbuf').textContent=t;
+  $('plab').textContent=mode==='rm'?'残りの重さ（量り直し）':'切った1本の重さ';$('pdisp').classList.toggle('rm',mode==='rm');
+  $('rmb').textContent=mode==='rm'?'量り直しをやめる':'残りを量る'}
+
+function render(){
+  $('vSetup').hidden=S.view!=='setup';$('vCut').hidden=S.view!=='cut';$('vDone').hidden=S.view!=='done';
+  const{c,trim,outs}=counts();const[a,b]=base();
+  if(S.view==='setup'){
+    $('carry').innerHTML=[160,180,220,240].map(g=>`<div class="st"><span>${g}g</span><div><button data-cm="${g}" aria-label="${g}を減らす">−</button><b>${S.carry[g]}</b><button data-cp="${g}" aria-label="${g}を増やす">＋</button></div></div>`).join('');
+    $('bcount').textContent='塊（2等分した12個）　'+S.blocks.length+'個入力済み・押すと消せます';
+    $('chips').innerHTML=S.blocks.map((B,i)=>`<button class="chip" data-del="${i}" aria-label="${B.w}gを消す">${B.w}</button>`).join('');
+    $('go').disabled=!S.blocks.length||loading;  // 繰り越しを読み込み中は切り始めない（古い余りで組まないように）
+  }
+  if(S.view==='cut'){
+    $('cnt').innerHTML=G.map(g=>`<div class="cell"><b>${c[g]}</b><span>${g}</span></div>`).join('');
+    $('bals').innerHTML=[[a,160,240],[b,180,220]].map(([x,l,h])=>`<div class="bal"><span class="dot" style="background:${dotc(x)}"></span>${balTxt(x,l,h)}</div>`).join('');
+    $('pick').innerHTML=S.blocks.map((B,i)=>B.done?'':`<button data-go="${i}" class="${S.cur===i?'on':''} ${B.pieces.length?'mid':''}">${B.w}</button>`).join('');
+    const B=S.cur!==null?S.blocks[S.cur]:null;const ok=B&&!B.done;
+    if(ok){
+      $('clab').textContent=B.w+'gの塊'+(B.pieces.length?'　切った分 '+B.pieces.map(x=>x.g||'外').join('・')+'　残り約'+Math.round(B.r)+'g':'　'+desc(B.plan.list));
+      const[ins,sub]=instr(B);$('ins').textContent=ins;$('sub').textContent=sub;
+    } else {const left=S.blocks.some(B=>!B.done);$('clab').textContent='';$('ins').textContent=left?'次に切る塊を上から選んでください':'全部切り終わりました';$('sub').textContent=left?'':'右上の「終わる」でまとめへ'}
+    $('hist').textContent=(S.log&&S.log.length)?'直近：'+S.log.slice(-4).reverse().map(x=>x.w+'→'+(x.g||'外')).join('　'):'';
+    $('pdisp').hidden=!ok;$('pkp').hidden=!ok;
+    $('flash').textContent=msg.t;$('flash').className=msg.w?'warn':'';
+    $('undo').disabled=!hist.length;
+    $('left').textContent='残り'+S.blocks.filter(B=>!B.done).length+'塊';
+    $('tbtn').textContent=!S.t0?'スタート':S.pAt?'再開':'中断';
+    $('clock').textContent=fmt(elapsed());
+  }
+  if(S.view==='done'){
+    const tot=G.reduce((s,g)=>s+c[g],0);const d=new Date(S.date);
+    $('sum').value=`ベーコンカット ${d.getMonth()+1}/${d.getDate()}\n`+G.slice().reverse().map(g=>g+'×'+c[g]).join('　')+`\n計${tot}本\n`+
+      (outs.length?'規格外：'+outs.map(w=>w+'g').join('・')+'\n':'')+(trim?'削った分：約'+trim+'g\n':'')+
+      (S.t0?'時間：'+fmt(elapsed())+'\n':'')+'余り：'+balTxt(a,160,240)+'／'+balTxt(b,180,220)+
+      (S.blocks.some(B=>!B.done)?'\n※まだ切っていない塊があります':'');
+  }
+  save();
+}
+function commit(){recompute();render()}
+
+/* 数字パッド：3けた（塊で1から始まるときは4けた）で自動決定 */
+const keys=['1','2','3','4','5','6','7','8','9','del','0','ok'];
+document.querySelectorAll('[data-kp]').forEach(el=>el.innerHTML=keys.map(k=>k==='del'?'<button class="del" data-k="del">1字けす</button>':k==='ok'?'<button class="ok" data-k="ok">決定</button>':`<button data-k="${k}">${k}</button>`).join(''));
+function need(){return S.view==='cut'&&mode==='p'?3:(buf[0]==='1'?4:3)}
+let tmr=null;
+function press(k){
+  if(k==='del'){clearTimeout(tmr);buf=buf.slice(0,-1);showBuf();return}
+  if(k==='ok'){clearTimeout(tmr);if(buf)enter();return}
+  if(buf.length>=4)return;buf+=k;showBuf();
+  if(buf.length===need()){clearTimeout(tmr);tmr=setTimeout(enter,150)}
+}
+function enter(){const w=parseInt(buf,10);buf='';showBuf();if(!(w>0))return;
+  if(S.view==='setup')addBlock(w);else if(S.view==='cut'){if(mode==='rm')remeasure(w);else piece(w)}}
+document.addEventListener('click',e=>{const t=e.target.closest('[data-k]');if(t)press(t.dataset.k)});
+document.addEventListener('keydown',e=>{if(/^[0-9]$/.test(e.key))press(e.key);else if(e.key==='Backspace')press('del');else if(e.key==='Enter')press('ok')});
+
+/* 準備 */
+function addBlock(w){if(w<100)return;snap();S.blocks.push({w,r:w,pieces:[],plan:null,done:false,replan:false});render()}
+$('chips').addEventListener('click',e=>{const t=e.target.closest('[data-del]');if(!t)return;snap();S.blocks.splice(+t.dataset.del,1);render()});
+$('carry').addEventListener('click',e=>{const t=e.target.closest('button');if(!t)return;
+  if(t.dataset.cp)S.carry[t.dataset.cp]++;if(t.dataset.cm&&S.carry[t.dataset.cm]>0)S.carry[t.dataset.cm]--;render();setLine('手で合わせました（'+carryText()+'）',true)});
+$('go').addEventListener('click',()=>{if(!S.blocks.length)return;snap();S.view='cut';recompute();S.cur=nextBlock();
+  if(!S.t0){S.t0=Date.now();S.pz=0;S.pAt=null}msg={t:'',w:false};mode='p';buf='';showBuf();render()});
+
+/* 切る */
+$('pick').addEventListener('click',e=>{const t=e.target.closest('[data-go]');if(!t)return;S.cur=+t.dataset.go;msg={t:'',w:false};mode='p';buf='';showBuf();render()});
+function piece(w){
+  if(S.cur===null)return;
+  const B=S.blocks[S.cur];snap();if(S.pAt){S.pz+=Date.now()-S.pAt;S.pAt=null}
+  if(!B.pieces.length)B.r=B.w;
+  const c=cls(w);B.pieces.push({w,g:c.g,trim:c.trim});B.r-=w;
+  const idx=B.plan.list.indexOf(c.g);
+  if(idx>=0){B.plan.list.splice(idx,1);B.plan.odd=null;if(B.plan.list.length&&!fits(B.plan.list,B.r))B.replan=true}else B.replan=true;
+  if(!B.replan&&!B.plan.list.length){if(B.r>=157)B.replan=true;else B.done=true}
+  if(B.replan&&B.r<60){B.replan=false;B.plan.list=[];B.done=true}
+  S.log=(S.log||[]).concat([{w,g:c.g}]).slice(-8);
+  msg={t:w+' → '+(c.g?c.g:'規格外')+(c.trim?'（約'+c.trim+'g削る）':''),w:!c.g};
+  if(B.done){msg.t+='　この塊は完了';S.cur=null}
+  commit();
+}
+function remeasure(w){mode='p';if(S.cur===null){showBuf();return}snap();const B=S.blocks[S.cur];if(!B.pieces.length)B.w=w;B.r=w;if(B.pieces.length)B.replan=true;msg={t:'残り'+w+'gで組み直しました',w:false};commit();showBuf()}
+$('undo').addEventListener('click',()=>{if(!hist.length)return;S=JSON.parse(hist.pop());msg={t:'1つ戻しました',w:false};mode='p';buf='';showBuf();commit()});
+$('rmb').addEventListener('click',()=>{mode=mode==='rm'?'p':'rm';buf='';showBuf()});
+$('tbtn').addEventListener('click',()=>{if(!S.t0){S.t0=Date.now();S.pz=0}else if(S.pAt){S.pz+=Date.now()-S.pAt;S.pAt=null}else S.pAt=Date.now();render()});
+$('finb').addEventListener('click',()=>{if(S.t0&&!S.tEnd){if(S.pAt){S.pz+=Date.now()-S.pAt;S.pAt=null}S.tEnd=Date.now()}S.view='done';render()});
+
+/* まとめ */
+$('back').addEventListener('click',()=>{if(S.tEnd&&S.blocks.some(B=>!B.done)){S.pz+=Date.now()-S.tEnd;S.tEnd=null}S.view='cut';S.cur=S.cur??nextBlock();render()});
+$('copy').addEventListener('click',async()=>{const t=$('sum');try{await navigator.clipboard.writeText(t.value);$('copy').textContent='コピーしました'}catch(e){t.select();$('copy').textContent='選択しました'}setTimeout(()=>$('copy').textContent='コピー',2000)});
+let armed=0;
+function resetBtn(btn,label){
+  if(Date.now()-armed>3000){armed=Date.now();btn.textContent='もう一度押すと消えます';setTimeout(()=>btn.textContent=label,3000);return}
+  const[a,b]=base();const keep=S.view==='done';snap();
+  S=fresh(keep?{160:Math.max(a,0),240:Math.max(-a,0),180:Math.max(b,0),220:Math.max(-b,0)}:S.carry);
+  armed=0;btn.textContent=label;msg={t:'',w:false};render();loadCarry()}
+$('reset').addEventListener('click',()=>resetBtn($('reset'),'新しいカットを始める'));
+$('reset1').addEventListener('click',()=>resetBtn($('reset1'),'やり直す'));
+setInterval(()=>{if(S.view==='cut'&&S.t0&&!S.tEnd&&!S.pAt)$('clock').textContent=fmt(elapsed())},1000);
+
+/* 繰り越しを読む（⑩ 11/25）
+   1) 受付の zk_data（在庫カウンターと同じ数）。生ベーコン＝品目ID BACON、rows の spec（160〜240）と n
+   2) 受付の住所が無い（Claude の中で開いた）ときだけ、明細一覧表「ベーコン在庫」の在庫表を直接読む（元の作り） */
+const EXEC='https://script.google.com/macros/s/AKfycbxVxiq_zZ6LFz_cWhz-RmKAFZ2ccub7rMukNTPgRcwmVwTB3gzC7A7fm0Pg1Ume7xG0/exec'; // リポジトリには書かない。公開するときに受付のURLへ置き換える
+const SHEET='1GZTagO0Nv-A5FxsfSgyqFv-Tu9nn1dDqE-JFpGULMBI';
+function carryText(){const c=S.carry;const p=[];for(const g of [160,180,220,240])if(c[g])p.push(g+'が'+c[g]+'本');return p.length?'余り：'+p.join('・'):'余り：なし（ペアはそろっています）'}
+function setLine(t,ng){const el=$('cline');el.textContent=t;el.classList.toggle('ng',!!ng);$('carry').hidden=!ng}
+async function stockFromExec(){
+  const ctl=typeof AbortController==='function'?new AbortController():null;
+  const tm=setTimeout(()=>{if(ctl)ctl.abort()},20000);
+  try{
+    const r=await fetch(EXEC,{method:'POST',body:JSON.stringify({action:'zk_data'}),headers:{'Content-Type':'text/plain;charset=utf-8'},signal:ctl?ctl.signal:undefined});
+    if(!r.ok)throw 0;
+    const d=await r.json();
+    if(!d||!d.ok||d.error)throw 0;  // 明細一覧表が読めなかった日は、0本と取り違えないよう読めなかった扱い
+    const it=(d.items||[]).find(x=>x.id==='BACON');if(!it||!Array.isArray(it.rows))throw 0;
+    const st={};for(const g of G){const row=it.rows.find(x=>String(x.spec)===String(g));if(!row&&g!==200)throw 0;st[g]=row?(Number(row.n)||0):0}  // 余りの計算に使う 160・180・220・240 が無いときだけ読めなかった扱い
+    return st;
+  }finally{clearTimeout(tm)}
+}
+async function stockFromSheet(){
+  const cl=window.claude;if(!cl||!cl.use)throw 0;
+  const m=await cl.use('mcp');if(!m)throw 0;
+  const r=await m.callTool('Google Sheets','get_values',{spreadsheetId:SHEET,range:'ベーコン在庫!A1:H40'});
+  let p=r&&r.payload;if(typeof p==='string')p=JSON.parse(p);
+  if(p&&!p.values&&Array.isArray(p.content)){const t=p.content.find(x=>x.type==='text');if(t)p=JSON.parse(t.text)}
+  const v=p&&p.values;if(!v)throw 0;
+  const hi=v.findIndex(r=>String(r[0]||'').startsWith('在庫'));if(hi<0)throw 0;
+  const head=v[hi].map(x=>parseInt(x,10));
+  const row=v.slice(hi+1).find(r=>String(r[0]||'').trim()==='計');if(!row)throw 0;
+  const st={};for(const g of G){const ix=head.indexOf(g);st[g]=ix>0?(parseInt(row[ix],10)||0):0}
+  return st;
+}
+let loadSeq=0;
+async function loadCarry(){
+  const my=++loadSeq;
+  loading=true;render();setLine('在庫を読み込み中…',false);
+  try{
+    const st=EXEC.indexOf('__')===0?await stockFromSheet():await stockFromExec();
+    if(my!==loadSeq)return;  // あとから読み直した分を優先
+    const a=st[160]-st[240],b=st[180]-st[220];
+    if(S.view==='setup'){S.carry={160:Math.max(a,0),240:Math.max(-a,0),180:Math.max(b,0),220:Math.max(-b,0)};save()}
+    lastInv=G.filter(g=>st[g]).map(g=>g+'×'+st[g]).join('・')||'なし';
+  }catch(e){if(my!==loadSeq)return;loading=false;render();setLine('在庫を読めませんでした。下で手で合わせてください（今：'+carryText()+'）',true);return}
+  loading=false;render();setLine('在庫 '+lastInv+'　→ '+carryText(),false);
+}
+if(S.blocks.length)recompute();showBuf();render();
+if(S.view==='setup')loadCarry();
+}
+</script>
+</body>
+</html>
