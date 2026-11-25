@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="在庫">
@@ -17,7 +17,9 @@
 <style>
 :root{--bg:#f6f4f0;--card:#fff;--ink:#222;--sub:#777;--line:#e4e0d8;--main:#b23a2a;--ok:#2e7d4f;--ng:#c0392b}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body,button,input{touch-action:manipulation}
+*{touch-action:manipulation} /* 2回たたいても拡大しない */
+body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none} /* 文字が選ばれない・長押しのメニューが出ない */
+input,textarea{-webkit-user-select:text;user-select:text} /* 入力欄だけは今までどおり */
 html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
 body{background:var(--bg);color:var(--ink);font-family:-apple-system,"Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;font-size:16px;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
 header{flex:none;display:flex;align-items:center;gap:8px;padding:16px 16px 8px;border-bottom:1px solid var(--line)}
@@ -206,6 +208,7 @@ document.addEventListener('visibilitychange', function(){
   if (document.hidden) { flushAll(); return; }
   if (!Object.keys(PEND).some(function(k){ return PEND[k]; }) && !Object.keys(BUSY).some(function(k){ return BUSY[k]; })) load();
 });
+document.addEventListener('gesturestart', function(e){ e.preventDefault(); });
 load();
 
 // 下に引っぱって更新（ホーム画面から開くとブラウザの更新ボタンが無いため）。入れかけの数は下書きとして残る

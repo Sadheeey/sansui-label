@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="ラベル">
@@ -18,7 +18,9 @@
 :root{--bg:#f6f4f0;--card:#fff;--ink:#222;--sub:#777;--line:#e4e0d8;--main:#b23a2a;--ok:#2e7d4f;--ng:#c0392b;
   --frz:#2b6cb0;--frz-bg:#e8f1fb;--ref:#2f855a;--ref-bg:#e6f4ec;--amb:#b7791f;--amb-bg:#fbf1df}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body,button,input{touch-action:manipulation} /* 連打してもズームしない */
+*{touch-action:manipulation} /* 2回たたいても拡大しない */
+body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none} /* 文字が選ばれない・長押しのメニューが出ない */
+input,textarea{-webkit-user-select:text;user-select:text} /* 入力欄だけは今までどおり */ /* 連打してもズームしない */
 html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
 body{background:var(--bg);color:var(--ink);font-family:-apple-system,"Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;font-size:16px;
   display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
@@ -654,6 +656,7 @@ function closeSheet(){ $('sheet').style.display = 'none'; }
 
 setInterval(function(){ if (!document.hidden) call('ui_status', [[]], function(r){ drawDev(r && r.device); }, function(){}); }, 30000);
 document.addEventListener('visibilitychange', function(){ if (!document.hidden) { call('ui_status', [[]], function(r){ drawDev(r && r.device); }, function(){}); poll(); } });
+document.addEventListener('gesturestart', function(e){ e.preventDefault(); });
 load();
 
 // 下に引っぱって更新（ホーム画面から開くとブラウザの更新ボタンが無いため）。入れかけの数は下書きとして残る
