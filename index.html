@@ -572,7 +572,7 @@ function drawBar(){
     acts = pendQ ? '<button class="btn main nx" onclick="openDecide()">終了</button>' : '<button class="btn sub nx" onclick="clearBar()">閉じる</button>';
     if (pendQ && !parts.length) tx += '<small>刷った数を確かめて「決定」すると在庫に入ります</small>';
   } else if (paused.length) {
-    tx = ic('pause') + 'プリンターが止まっています<small style="color:var(--ng)">ラベル切れかもしれません。ロールを替えると、続きから刷ります</small>';
+    tx = ic('pause') + 'プリンターが止まっています<small style="color:var(--ng)">ラベル切れかもしれません。ロールを替えたら、下の「残りを刷る」を押してください</small>';
     if (!PAUSE_SHOWN) { PAUSE_SHOWN = true; BAR_OPEN = true; }
   } else {
     tx = ic('print') + '印刷：済み ' + done + '/' + q.length + '件' + (held.length ? '<small>次：' + esc(held[0].title) + ' ' + esc(held[0].spec) + ' ×' + held[0].copies + (function(){ var m = held.filter(function(y){ return y.batch === held[0].batch; }).length; return m > 1 ? ' ほか' + (m - 1) + '種類' : ''; })() + '</small>' : '');
