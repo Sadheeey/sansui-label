@@ -708,7 +708,7 @@ function decGo(){
     if (!r || !r.ok) { showErr((r && r.error) || '決定できませんでした'); return; }
     QUEUE.forEach(function(x){ if (g.ids.indexOf(x.id) >= 0) x.note = String(x.note || '').replace('［決定待ち］', '［決定済み］'); });
     LAST_HD = LAST_LS = ''; drawBar();
-    openSheet('<h3>在庫に入れました</h3><div class="msg ok">' + esc(r.md) + 'カット ' + r.total + '枚' + (r.total !== r.printed ? '（刷った ' + r.printed + '枚）' : '') + '</div>' + (r.kai === false ? '<div class="msg warn">回づくりに知らせられませんでした。ベーコン在庫タブの 🧮 で組み直してください</div>' : '') + '<div class="acts"><button class="btn sub" onclick="closeSheet();endBar()">閉じる</button></div>');
+    openSheet('<h3>在庫に入れました</h3><div class="msg ok">' + esc(r.md) + 'カット ' + r.total + '枚' + (r.total !== r.printed ? '（刷った ' + r.printed + '枚）' : '') + '</div>' + '<div class="acts"><button class="btn sub" onclick="closeSheet();endBar()">閉じる</button></div>');
     call('ui_pending', [], function(p){ if (p && p.ok) drawPend(p.groups.map(function(x){ return { md: x.md, total: x.counts.reduce(function(a, y){ return a + y; }, 0) }; })); }, function(){});
   }, function(m){ DEC_BUSY = false; showErr(m + '（届いたか分からないので、開き直して確かめてください）'); });
 }
